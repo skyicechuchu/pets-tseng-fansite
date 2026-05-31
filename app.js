@@ -23,6 +23,36 @@ const ICON = {
   external: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4"><path d="M14 3h7v7"/><path d="M10 14L21 3"/><path d="M21 14v7H3V3h7"/></svg>',
 };
 
+/* 音乐平台品牌图标（线性 SVG，统一 currentColor，配合各品牌 hover 色） */
+const PLATFORM_ICON = {
+  // Apple Music：音符
+  apple: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-[18px] h-[18px]"><path d="M9 17.5a2.5 2.5 0 1 1-2.5-2.5c.18 0 .34.02.5.05V7l9-2v8.5a2.5 2.5 0 1 1-2.5-2.5c.18 0 .34.02.5.05V6.3L9 7.8v9.7z"/></svg>',
+  // QQ 音乐：企鹅 + 音符（简化）
+  qq: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-[18px] h-[18px]"><path d="M12 2c3.3 0 6 2.9 6 6.4 0 1.3.5 2 1.1 2.9.5.8 1 1.6 1 2.8 0 1.1-.7 1.7-1.5 1.5-.5-.1-.9-.5-1.2-1-.2.9-.6 1.7-1.1 2.3.7.3 1.2.7 1.2 1.2 0 .8-1.6 1.4-3.6 1.5-.6.4-1.4.6-2.4.6s-1.8-.2-2.4-.6c-2-.1-3.6-.7-3.6-1.5 0-.5.5-.9 1.2-1.2-.5-.6-.9-1.4-1.1-2.3-.3.5-.7.9-1.2 1-.8.2-1.5-.4-1.5-1.5 0-1.2.5-2 1-2.8.6-.9 1.1-1.6 1.1-2.9C6 4.9 8.7 2 12 2z"/></svg>',
+  // YouTube Music：圆形 + 播放三角
+  ytm: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-[18px] h-[18px]"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 1.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 0 1 0-17zM10 8.3v7.4l6-3.7-6-3.7z"/></svg>',
+};
+/* 各平台 hover 品牌色（用内联 class，Tailwind 任意值） */
+const PLATFORM_META = {
+  apple: { label: "Apple Music", hover: "hover:bg-[#fa233b] hover:border-[#fa233b]" },
+  qq:    { label: "QQ 音乐",     hover: "hover:bg-[#31c27c] hover:border-[#31c27c]" },
+  ytm:   { label: "YouTube Music", hover: "hover:bg-[#ff0000] hover:border-[#ff0000]" },
+};
+function platformBar(p) {
+  if (!p) return "";
+  const order = ["qq", "ytm", "apple"];
+  const btns = order.filter(k => p[k]).map(k => {
+    const m = PLATFORM_META[k];
+    return `<a href="${esc(p[k])}" target="_blank" rel="noopener noreferrer"
+       aria-label="在 ${esc(m.label)} 收听" title="${esc(m.label)}"
+       class="inline-flex items-center justify-center w-11 h-11 rounded-full
+              border border-brand-200 text-brand-600 bg-white cursor-pointer
+              ${m.hover} hover:text-white transition-colors duration-200">
+       ${PLATFORM_ICON[k]}</a>`;
+  }).join("");
+  return `<div class="flex items-center gap-2 mt-3" role="group" aria-label="收听平台">${btns}</div>`;
+}
+
 /* ---------- 渲染函数（逐步填充） ---------- */
 function renderHero() {
   const s = SITE;
@@ -101,6 +131,7 @@ function renderMusic() {
       <h3 class="font-display text-lg text-gray-800">${esc(al.title)}</h3>
       <p class="text-sm text-brand-500">${esc(al.label)}</p>
       <p class="text-sm text-gray-500 mt-1">${esc(al.note)}</p>
+      ${platformBar(al.platforms)}
     </div>`;
   }).join("");
 
