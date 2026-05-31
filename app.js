@@ -250,7 +250,7 @@ function renderDashboard() {
   const baseOpts = { responsive:true, maintainAspectRatio:false,
     animation: noAnim ? false : undefined };
 
-  const rankColors = r.labels.map(l => l === r.highlight ? "#db2777" : "#fbcfe8");
+  const rankColors = r.labels.map(l => l === r.highlight ? "#dc2626" : "#fecaca");
   new Chart($("rankChart"), {
     type: "bar",
     data: { labels: r.labels, datasets: [{ data: r.values, backgroundColor: rankColors,
@@ -258,18 +258,18 @@ function renderDashboard() {
     options: Object.assign({}, baseOpts, {
       indexAxis: "y",
       plugins: { legend: { display:false } },
-      scales: { x: { beginAtZero:true, grid:{ color:"#f3e8ee" } }, y: { grid:{ display:false } } },
+      scales: { x: { beginAtZero:true, grid:{ color:"#fde8e8" } }, y: { grid:{ display:false } } },
     }),
   });
 
   new Chart($("trendChart"), {
     type: "line",
     data: { labels: tr.labels, datasets: [{ data: tr.values, label:"投票数",
-             borderColor:"#db2777", backgroundColor:"rgba(236,72,153,0.15)",
-             fill:true, tension:0.35, pointBackgroundColor:"#db2777" }] },
+             borderColor:"#dc2626", backgroundColor:"rgba(239,68,68,0.15)",
+             fill:true, tension:0.35, pointBackgroundColor:"#dc2626" }] },
     options: Object.assign({}, baseOpts, {
       plugins: { legend: { display:false } },
-      scales: { y: { beginAtZero:true, grid:{ color:"#f3e8ee" } }, x: { grid:{ display:false } } },
+      scales: { y: { beginAtZero:true, grid:{ color:"#fde8e8" } }, x: { grid:{ display:false } } },
     }),
   });
 }
