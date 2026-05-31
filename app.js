@@ -92,6 +92,7 @@ function renderAbout() {
     weibo:     '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M10.1 20.3c-4.3.4-8-1.5-8.3-4.4s2.9-5.5 7.2-5.9 8 1.5 8.3 4.4-2.9 5.5-7.2 5.9zm.5-3.4c-.4.7-1.3 1-2 .6s-.8-1.1-.4-1.8 1.2-1 1.9-.7.9 1.1.5 1.9zm1.4-1.7c-.1.2-.4.3-.6.2s-.3-.4-.2-.6.4-.3.6-.2.3.4.2.6zM20 9.1c-.3-.1-.6-.1-.4-.6.3-.7.3-1.4 0-1.9-.6-1-2.3-.8-4.2 0 0 0-.6.3-.5-.2.3-1 .3-1.9-.2-2.4-1-1-3.9.1-6.4 2.6"/><circle cx="19" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
     facebook:  '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.3v7A10 10 0 0 0 22 12z"/></svg>',
     douyin:    '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M19 8.2a6 6 0 0 1-3.5-1.1v6.7a5.3 5.3 0 1 1-5.3-5.3c.3 0 .5 0 .8.1v2.7a2.6 2.6 0 1 0 1.8 2.5V2.5h2.7A3.6 3.6 0 0 0 19 5.5z"/></svg>',
+    xiaohongshu: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm2.2 5.2v5.6h1.3v-2.2h.9l1 2.2H13l-1.1-2.4a1.5 1.5 0 0 0 .9-1.4c0-1-.7-1.6-1.9-1.6H7.2zm1.3 1.1h1c.5 0 .8.2.8.6s-.3.6-.8.6h-1v-1.2zm5.6-1.1v5.6h3.7v-1.1h-2.4v-1.3h2.1v-1.1h-2.1v-1h2.3V9.2h-3.6z"/></svg>',
   };
   const socials = (a.socials || []).map(s => {
     const icon = SOCIAL_ICON[s.platform] || "";

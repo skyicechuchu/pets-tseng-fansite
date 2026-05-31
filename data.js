@@ -33,6 +33,7 @@ const SITE = {
       { platform: "youtube",   label: "YouTube",  url: "https://www.youtube.com/channel/UCLq1-YKPPy1Z8zLiNqe8bBQ" },
       { platform: "instagram", label: "Instagram", url: "https://www.instagram.com/tseng_pets_ohyeah/" },
       { platform: "weibo",     label: "微博",      url: "https://weibo.com/u/1797539504" },
+      { platform: "xiaohongshu", label: "小红书",  url: "https://www.xiaohongshu.com/user/profile/5d35a0a90000000016005932" },
       { platform: "facebook",  label: "Facebook", url: "https://www.facebook.com/ohyeahpetsofficial" },
     ],
   },
