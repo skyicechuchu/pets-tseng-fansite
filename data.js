@@ -55,7 +55,7 @@ const SITE = {
       link: "https://music.apple.com/tw/album/948585160",
       platforms: {
         apple: "https://music.apple.com/tw/album/948585160",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%98%AF%E6%9B%BE%E6%B2%9B%E6%85%88&t=album",
+        qq: "https://y.qq.com/n/ryqq/albumDetail/000GfDUJ2Ya7KD",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%98%AF%E6%9B%BE%E6%B2%9B%E6%85%88" } },
     { year: "2017", title: "我愛你 以上", type: "专辑 · 13 曲",
       note: "情歌实力的集成，收录多首传唱金曲。",
@@ -63,7 +63,7 @@ const SITE = {
       link: "https://music.apple.com/tw/album/1251369850",
       platforms: {
         apple: "https://music.apple.com/tw/album/1251369850",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%84%9B%E4%BD%A0%20%E4%BB%A5%E4%B8%8A&t=album",
+        qq: "https://y.qq.com/n/ryqq/albumDetail/000PkTy01t5WdG",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%84%9B%E4%BD%A0%20%E4%BB%A5%E4%B8%8A" } },
     { year: "2019", title: "謎之音", type: "专辑 · 10 曲",
       note: "音乐性更成熟的概念之作。",
@@ -71,7 +71,7 @@ const SITE = {
       link: "https://music.apple.com/tw/album/1475895858",
       platforms: {
         apple: "https://music.apple.com/tw/album/1475895858",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E8%AC%8E%E4%B9%8B%E9%9F%B3&t=album",
+        qq: "https://y.qq.com/n/ryqq/albumDetail/000LXvbi0rETyp",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E8%AC%8E%E4%B9%8B%E9%9F%B3" } },
     { year: "2022", title: "今天陽光就是特別耀眼特別和諧", type: "专辑 · 10 曲",
       note: "贴近自我、温暖明亮的创作阶段。",
@@ -79,7 +79,7 @@ const SITE = {
       link: "https://music.apple.com/tw/album/1638091421",
       platforms: {
         apple: "https://music.apple.com/tw/album/1638091421",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%BB%8A%E5%A4%A9%E9%99%BD%E5%85%89%E5%B0%B1%E6%98%AF%E7%89%B9%E5%88%A5%E8%80%80%E7%9C%BC%E7%89%B9%E5%88%A5%E5%92%8C%E8%AB%A7&t=album",
+        qq: "https://y.qq.com/n/ryqq/albumDetail/000YvMbL1L1lDy",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%BB%8A%E5%A4%A9%E9%99%BD%E5%85%89%E5%B0%B1%E6%98%AF%E7%89%B9%E5%88%A5%E8%80%80%E7%9C%BC%E7%89%B9%E5%88%A5%E5%92%8C%E8%AB%A7" } },
     { year: "2025", title: "下週同樣時間", type: "最新专辑 · 11 曲",
       note: "2025 年最新发行，延续真挚细腻的风格。",
@@ -87,7 +87,7 @@ const SITE = {
       link: "https://music.apple.com/tw/album/1815486071",
       platforms: {
         apple: "https://music.apple.com/tw/album/1815486071",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%8B%E9%80%B1%E5%90%8C%E6%A8%A3%E6%99%82%E9%96%93&t=album",
+        qq: "https://y.qq.com/n/ryqq/albumDetail/003DsrVC1flGC3",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%8B%E9%80%B1%E5%90%8C%E6%A8%A3%E6%99%82%E9%96%93" } },
   ],
 
