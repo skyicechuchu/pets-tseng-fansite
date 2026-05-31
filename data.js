@@ -41,7 +41,7 @@ const SITE = {
   // ---- 音乐作品（专辑时间线 + CD 唱片展示）----
   // cover: 可放真实封面图 URL；留空则用品牌色生成的占位唱片
   albums: [
-    { year: "2014", title: "我是曾沛慈", type: "首张个人专辑 · 14 曲", label: "福茂唱片",
+    { year: "2014", title: "我是曾沛慈", type: "首张个人专辑 · 14 曲",
       note: "正式以个人歌手身份出道的同名专辑。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music3/v4/0e/ba/27/0eba270e-369c-217d-de24-4517e5123e2b/dj.iaofpmis.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/948585160",
@@ -49,7 +49,7 @@ const SITE = {
         apple: "https://music.apple.com/tw/album/948585160",
         qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%98%AF%E6%9B%BE%E6%B2%9B%E6%85%88&t=album",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%98%AF%E6%9B%BE%E6%B2%9B%E6%85%88" } },
-    { year: "2017", title: "我愛你 以上", type: "专辑 · 13 曲", label: "福茂唱片",
+    { year: "2017", title: "我愛你 以上", type: "专辑 · 13 曲",
       note: "情歌实力的集成，收录多首传唱金曲。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music127/v4/e7/75/29/e7752975-9184-8e1e-54cc-1aef6b059fb9/cover.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/1251369850",
@@ -57,7 +57,7 @@ const SITE = {
         apple: "https://music.apple.com/tw/album/1251369850",
         qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%84%9B%E4%BD%A0%20%E4%BB%A5%E4%B8%8A&t=album",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%84%9B%E4%BD%A0%20%E4%BB%A5%E4%B8%8A" } },
-    { year: "2019", title: "謎之音", type: "专辑 · 10 曲", label: "福茂唱片",
+    { year: "2019", title: "謎之音", type: "专辑 · 10 曲",
       note: "音乐性更成熟的概念之作。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/5b/5a/71/5b5a713c-570f-78de-b612-85cdbaf3ecc9/4711228277674.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/1475895858",
@@ -65,7 +65,7 @@ const SITE = {
         apple: "https://music.apple.com/tw/album/1475895858",
         qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E8%AC%8E%E4%B9%8B%E9%9F%B3&t=album",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E8%AC%8E%E4%B9%8B%E9%9F%B3" } },
-    { year: "2022", title: "今天陽光就是特別耀眼特別和諧", type: "专辑 · 10 曲", label: "福茂唱片",
+    { year: "2022", title: "今天陽光就是特別耀眼特別和諧", type: "专辑 · 10 曲",
       note: "贴近自我、温暖明亮的创作阶段。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/68/7d/78/687d7821-9cb4-fe99-2ecf-d2f3ba56325d/4711099698578.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/1638091421",
@@ -73,7 +73,7 @@ const SITE = {
         apple: "https://music.apple.com/tw/album/1638091421",
         qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%BB%8A%E5%A4%A9%E9%99%BD%E5%85%89%E5%B0%B1%E6%98%AF%E7%89%B9%E5%88%A5%E8%80%80%E7%9C%BC%E7%89%B9%E5%88%A5%E5%92%8C%E8%AB%A7&t=album",
         ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%BB%8A%E5%A4%A9%E9%99%BD%E5%85%89%E5%B0%B1%E6%98%AF%E7%89%B9%E5%88%A5%E8%80%80%E7%9C%BC%E7%89%B9%E5%88%A5%E5%92%8C%E8%AB%A7" } },
-    { year: "2025", title: "下週同樣時間", type: "最新专辑 · 11 曲", label: "福茂唱片",
+    { year: "2025", title: "下週同樣時間", type: "最新专辑 · 11 曲",
       note: "2025 年最新发行，延续真挚细腻的风格。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/10/c5/83/10c5830c-3eb9-fcac-0576-1781e4e5aab1/4711280335220.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/1815486071",
@@ -90,7 +90,7 @@ const SITE = {
       note: "成名曲，传唱度最高的代表作之一。", audio: "",
       link: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%80%E5%80%8B%E4%BA%BA%E6%83%B3%E8%91%97%E4%B8%80%E5%80%8B%E4%BA%BA" },
     { title: "不过失去了一点点", album: "终极恶女 片尾曲", year: "2016",
-      note: "情歌实力的代表，福茂官方 MV。", audio: "",
+      note: "情歌实力的代表，官方 MV。", audio: "",
       link: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%8D%E9%81%8E%E5%A4%B1%E5%8E%BB%E4%BA%86%E4%B8%80%E9%BB%9E%E9%BB%9E" },
     { title: "我的泪", album: "在一起，就好 片尾曲", year: "2015",
       note: "细腻动人的剧集主题曲。", audio: "",
@@ -147,7 +147,6 @@ const SITE = {
   links: [
     { label: "维基百科", url: "https://zh.wikipedia.org/wiki/曾沛慈" },
     { label: "B站官方主页", url: "https://space.bilibili.com/3546795672079131" },
-    { label: "福茂唱片", url: "https://www.linfairrecords.com/" },
   ],
   disclaimer: "本站为粉丝应援交流用途，非官方网站。所有图文版权归原作者及版权方所有。",
 };
