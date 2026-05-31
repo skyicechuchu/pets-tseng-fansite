@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>曾沛慈 Pets Tseng · 应援站</title>
+  <meta name="description" content="曾沛慈 Pets Tseng 粉丝应援站 — 音乐、影音、传记与打投数据看板。" />
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Fonts: Righteous (display) + Noto Sans TC (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Righteous&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50:"#fff1f5",100:"#ffe4ec",200:"#fecdd9",300:"#fda4bd",
+              400:"#fb6f9c",500:"#ec4899",600:"#db2777",700:"#be185d",
+              800:"#9d174d",900:"#831843",
+            },
+          },
+          fontFamily: {
+            display: ['Righteous','Noto Sans TC','sans-serif'],
+            sans: ['Noto Sans TC','system-ui','sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { scroll-behavior: smooth; }
+    body { overflow-x: hidden; }
+
+    /* 旋转 CD 唱片 */
+    .cd-disc {
+      background:
+        radial-gradient(circle at 50% 50%, #1a1a1a 0 18%, transparent 18.5%),
+        radial-gradient(circle at 50% 50%, #fff 0 8%, transparent 8.5%),
+        repeating-radial-gradient(circle at 50% 50%,
+          rgba(255,255,255,0.06) 0 2px, rgba(0,0,0,0.5) 2px 4px),
+        conic-gradient(from 0deg,
+          #ec4899, #db2777, #f472b6, #be185d, #fb7185, #ec4899);
+    }
+    .cd-spin { animation: cd-rotate 8s linear infinite; }
+    @keyframes cd-rotate { to { transform: rotate(360deg); } }
+
+    /* 唱片从封面滑出 */
+    .album-card:hover .cd-wrap { transform: translateX(38%) rotate(8deg); }
+    .cd-wrap { transition: transform .45s cubic-bezier(.22,.61,.36,1); }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .cd-spin { animation: none; }
+      .cd-wrap { transition: none; }
+    }
+    .nav-link.active { color:#db2777; }
+  </style>
+</head>
+<body class="font-sans bg-brand-50 text-gray-800 antialiased">
+
+  <!-- 顶部导航 -->
+  <header class="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur border-b border-brand-100">
+    <nav class="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between">
+      <a href="#hero" class="font-display text-xl text-brand-600">曾沛慈<span class="text-brand-400">.</span></a>
+      <div class="hidden sm:flex gap-6 text-sm font-medium">
+        <a href="#about" class="nav-link hover:text-brand-600 transition-colors duration-200">关于</a>
+        <a href="#music" class="nav-link hover:text-brand-600 transition-colors duration-200">音乐</a>
+        <a href="#videos" class="nav-link hover:text-brand-600 transition-colors duration-200">影音</a>
+        <a href="#dashboard" class="nav-link hover:text-brand-600 transition-colors duration-200">数据看板</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="pt-14">
+    <section id="hero"></section>
+    <section id="about" class="scroll-mt-16"></section>
+    <section id="music" class="scroll-mt-16"></section>
+    <section id="videos" class="scroll-mt-16"></section>
+    <section id="dashboard" class="scroll-mt-16"></section>
+  </main>
+
+  <footer id="footer"></footer>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
