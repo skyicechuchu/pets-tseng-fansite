@@ -37,40 +37,35 @@ const SITE = {
       link: "https://music.apple.com/tw/album/948585160",
       platforms: {
         apple: "https://music.apple.com/tw/album/948585160",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%98%AF%E6%9B%BE%E6%B2%9B%E6%85%88&t=album",
-        ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%98%AF%E6%9B%BE%E6%B2%9B%E6%85%88" } },
+        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%98%AF%E6%9B%BE%E6%B2%9B%E6%85%88&t=album" } },
     { year: "2017", title: "我愛你 以上", type: "专辑 · 13 曲", label: "福茂唱片",
       note: "情歌实力的集成，收录多首传唱金曲。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music127/v4/e7/75/29/e7752975-9184-8e1e-54cc-1aef6b059fb9/cover.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/1251369850",
       platforms: {
         apple: "https://music.apple.com/tw/album/1251369850",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%84%9B%E4%BD%A0%20%E4%BB%A5%E4%B8%8A&t=album",
-        ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%84%9B%E4%BD%A0%20%E4%BB%A5%E4%B8%8A" } },
+        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E6%84%9B%E4%BD%A0%20%E4%BB%A5%E4%B8%8A&t=album" } },
     { year: "2019", title: "謎之音", type: "专辑 · 10 曲", label: "福茂唱片",
       note: "音乐性更成熟的概念之作。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/5b/5a/71/5b5a713c-570f-78de-b612-85cdbaf3ecc9/4711228277674.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/1475895858",
       platforms: {
         apple: "https://music.apple.com/tw/album/1475895858",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E8%AC%8E%E4%B9%8B%E9%9F%B3&t=album",
-        ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E8%AC%8E%E4%B9%8B%E9%9F%B3" } },
+        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E8%AC%8E%E4%B9%8B%E9%9F%B3&t=album" } },
     { year: "2022", title: "今天陽光就是特別耀眼特別和諧", type: "专辑 · 10 曲", label: "福茂唱片",
       note: "贴近自我、温暖明亮的创作阶段。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/68/7d/78/687d7821-9cb4-fe99-2ecf-d2f3ba56325d/4711099698578.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/1638091421",
       platforms: {
         apple: "https://music.apple.com/tw/album/1638091421",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%BB%8A%E5%A4%A9%E9%99%BD%E5%85%89%E5%B0%B1%E6%98%AF%E7%89%B9%E5%88%A5%E8%80%80%E7%9C%BC%E7%89%B9%E5%88%A5%E5%92%8C%E8%AB%A7&t=album",
-        ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%BB%8A%E5%A4%A9%E9%99%BD%E5%85%89%E5%B0%B1%E6%98%AF%E7%89%B9%E5%88%A5%E8%80%80%E7%9C%BC%E7%89%B9%E5%88%A5%E5%92%8C%E8%AB%A7" } },
+        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%BB%8A%E5%A4%A9%E9%99%BD%E5%85%89%E5%B0%B1%E6%98%AF%E7%89%B9%E5%88%A5%E8%80%80%E7%9C%BC%E7%89%B9%E5%88%A5%E5%92%8C%E8%AB%A7&t=album" } },
     { year: "2025", title: "下週同樣時間", type: "最新专辑 · 11 曲", label: "福茂唱片",
       note: "2025 年最新发行，延续真挚细腻的风格。",
       cover: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/10/c5/83/10c5830c-3eb9-fcac-0576-1781e4e5aab1/4711280335220.jpg/600x600bb.jpg",
       link: "https://music.apple.com/tw/album/1815486071",
       platforms: {
         apple: "https://music.apple.com/tw/album/1815486071",
-        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%8B%E9%80%B1%E5%90%8C%E6%A8%A3%E6%99%82%E9%96%93&t=album",
-        ytm: "https://music.youtube.com/search?q=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%8B%E9%80%B1%E5%90%8C%E6%A8%A3%E6%99%82%E9%96%93" } },
+        qq: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%8B%E9%80%B1%E5%90%8C%E6%A8%A3%E6%99%82%E9%96%93&t=album" } },
   ],
 
   // ---- 代表曲目（试听 / 平台链接）----
@@ -78,21 +73,20 @@ const SITE = {
   tracks: [
     { title: "一个人想着一个人", album: "终极一班 2 电视原声带", year: "2011",
       note: "成名曲，传唱度最高的代表作之一。", audio: "",
-      link: "https://www.youtube.com/watch?v=olODk6jhMhM" },
+      link: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%80%E5%80%8B%E4%BA%BA%E6%83%B3%E8%91%97%E4%B8%80%E5%80%8B%E4%BA%BA" },
     { title: "不过失去了一点点", album: "终极恶女 片尾曲", year: "2016",
       note: "情歌实力的代表，福茂官方 MV。", audio: "",
-      link: "https://www.youtube.com/watch?v=7dKOb-dKAyg" },
+      link: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E4%B8%8D%E9%81%8E%E5%A4%B1%E5%8E%BB%E4%BA%86%E4%B8%80%E9%BB%9E%E9%BB%9E" },
     { title: "我的泪", album: "在一起，就好 片尾曲", year: "2015",
       note: "细腻动人的剧集主题曲。", audio: "",
-      link: "https://www.youtube.com/watch?v=lODRdCZU3Vs" },
+      link: "https://y.qq.com/n/ryqq/search?w=%E6%9B%BE%E6%B2%9B%E6%85%88%20%E6%88%91%E7%9A%84%E6%B7%9A" },
   ],
 
   // ---- 影音视频 ----
   // 卡片类型（按字段自动判断，优先级从上到下）：
   //   bili: "BVxxxx"        -> 内嵌 B站官方播放器（拿到真实 BV 号后填这里即可内嵌）
   //   biliSpace: "UID"      -> B站个人主页入口卡（点击跳转该账号空间）
-  //   ytid: "xxxx"          -> 内嵌 YouTube 播放器（均经 oembed 核实为官方真实 MV）
-  //   都留空                -> 显示「YouTube 搜索」占位卡（避免嵌入死链）
+  //   都留空                -> （已无占位卡）
   videos: [
     // 曾沛慈 B站官方账号入口（已 API 核实：UID 3546795672079131，官方认证「歌手演员曾沛慈」）
     { biliSpace: "3546795672079131", title: "曾沛慈 B站官方主页",
@@ -146,7 +140,7 @@ const SITE = {
   // ---- 页脚官方链接 ----
   links: [
     { label: "维基百科", url: "https://zh.wikipedia.org/wiki/曾沛慈" },
-    { label: "YouTube 搜索", url: "https://www.youtube.com/results?search_query=曾沛慈" },
+    { label: "B站官方主页", url: "https://space.bilibili.com/3546795672079131" },
     { label: "福茂唱片", url: "https://www.linfairrecords.com/" },
   ],
   disclaimer: "本站为粉丝应援交流用途，非官方网站。所有图文版权归原作者及版权方所有。",
