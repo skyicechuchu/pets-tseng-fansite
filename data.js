@@ -124,9 +124,7 @@ const SITE = {
       { label: "累计投票数", value: "1,284,560", delta: "+12,340", up: true },
       { label: "音源榜排名", value: "#3", delta: "↑2", up: true },
       { label: "MV 总播放", value: "892 万", delta: "+5.1 万", up: true },
-      { label: "应援集资", value: "78%", delta: "进行中", up: true },
     ],
-    funding: { current: 780000, goal: 1000000, unit: "元", label: "生日应援集资进度" },
     ranking: {
       title: "音源榜实时排名（示例）",
       labels: ["选手 A", "选手 B", "曾沛慈", "选手 C", "选手 D", "选手 E"],

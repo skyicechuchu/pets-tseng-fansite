@@ -284,9 +284,11 @@ function renderDashboard() {
         ${s.up ? ICON.arrowUp : ""}${esc(s.delta)}</p>
     </div>`).join("");
 
-  const f = c.funding;
-  const pct = Math.min(100, Math.round((f.current / f.goal) * 100));
-  const funding = `
+  let funding = "";
+  if (c.funding) {
+    const f = c.funding;
+    const pct = Math.min(100, Math.round((f.current / f.goal) * 100));
+    funding = `
     <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-6">
       <div class="flex justify-between items-baseline mb-2">
         <h3 class="font-medium text-gray-800">${esc(f.label)}</h3>
@@ -300,6 +302,7 @@ function renderDashboard() {
       <p class="text-xs text-gray-500 mt-2">
         ${f.current.toLocaleString()} / ${f.goal.toLocaleString()} ${esc(f.unit)}</p>
     </div>`;
+  }
 
   // 数据表 fallback（无障碍）
   const r = c.ranking, tr = c.trend;
@@ -318,7 +321,7 @@ function renderDashboard() {
         ${weiboBanner}
 
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">${stats}</div>
-        <div class="mb-8">${funding}</div>
+        ${funding ? `<div class="mb-8">${funding}</div>` : ""}
 
         <div class="grid md:grid-cols-2 gap-6">
           <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5 min-w-0">
