@@ -135,33 +135,12 @@ function renderMusic() {
     </div>`;
   }).join("");
 
-  // 代表曲目
-  const tracks = SITE.tracks.map(t => {
-    const player = t.audio
-      ? `<audio controls preload="none" class="w-full mt-2"><source src="${esc(t.audio)}"></audio>`
-      : `<a href="${esc(t.link)}" target="_blank" rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 mt-1">
-           ${ICON.play} 官方平台试听 ${ICON.external}</a>`;
-    return `
-    <li class="bg-white rounded-xl border border-brand-100 p-4 flex flex-col">
-      <div class="flex items-baseline justify-between gap-2">
-        <span class="font-medium text-gray-800">${esc(t.title)}</span>
-        <span class="text-xs text-gray-400 shrink-0">${esc(t.year)}</span>
-      </div>
-      <span class="text-xs text-gray-500">${esc(t.album)}</span>
-      <span class="text-sm text-gray-500 mt-1">${esc(t.note)}</span>
-      ${player}
-    </li>`;
-  }).join("");
-
   $("music").innerHTML = `
     <div class="bg-white/60">
       <div class="max-w-6xl mx-auto px-5 py-20">
         <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-2 text-center">音乐作品</h2>
         <p class="text-center text-gray-500 mb-10">把鼠标移到专辑上，唱片会从封面里转出来</p>
-        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">${albums}</div>
-        <h3 class="font-display text-2xl text-brand-500 mb-6 text-center">代表曲目</h3>
-        <ul class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">${tracks}</ul>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">${albums}</div>
       </div>
     </div>`;
 }
