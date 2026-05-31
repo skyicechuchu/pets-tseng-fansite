@@ -83,6 +83,30 @@ function renderAbout() {
       <dt class="text-gray-500">${esc(i.label)}</dt>
       <dd class="font-medium text-gray-800">${esc(i.value)}</dd>
     </div>`).join("");
+
+  // 社交平台 icon 一栏
+  const SOCIAL_ICON = {
+    bilibili:  '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M17.8 3.2a1 1 0 0 1 0 1.4L16.5 6H19a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3h2.5L6.2 4.6a1 1 0 1 1 1.4-1.4L10 5.6q.2.2.3.4h3.4q.1-.2.3-.4l2.4-2.4a1 1 0 0 1 1.4 0zM5 8a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1zm3 3a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1zm8 0a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1z"/></svg>',
+    youtube:   '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M23 12s0-3.2-.4-4.7a2.5 2.5 0 0 0-1.7-1.7C19.3 5.2 12 5.2 12 5.2s-7.3 0-8.9.4A2.5 2.5 0 0 0 1.4 7.3C1 8.8 1 12 1 12s0 3.2.4 4.7a2.5 2.5 0 0 0 1.7 1.7c1.6.4 8.9.4 8.9.4s7.3 0 8.9-.4a2.5 2.5 0 0 0 1.7-1.7C23 15.2 23 12 23 12zM9.8 15.3V8.7l5.7 3.3-5.7 3.3z"/></svg>',
+    instagram: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>',
+    weibo:     '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M10.1 20.3c-4.3.4-8-1.5-8.3-4.4s2.9-5.5 7.2-5.9 8 1.5 8.3 4.4-2.9 5.5-7.2 5.9zm.5-3.4c-.4.7-1.3 1-2 .6s-.8-1.1-.4-1.8 1.2-1 1.9-.7.9 1.1.5 1.9zm1.4-1.7c-.1.2-.4.3-.6.2s-.3-.4-.2-.6.4-.3.6-.2.3.4.2.6zM20 9.1c-.3-.1-.6-.1-.4-.6.3-.7.3-1.4 0-1.9-.6-1-2.3-.8-4.2 0 0 0-.6.3-.5-.2.3-1 .3-1.9-.2-2.4-1-1-3.9.1-6.4 2.6"/><circle cx="19" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+    facebook:  '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.3v7A10 10 0 0 0 22 12z"/></svg>',
+    douyin:    '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M19 8.2a6 6 0 0 1-3.5-1.1v6.7a5.3 5.3 0 1 1-5.3-5.3c.3 0 .5 0 .8.1v2.7a2.6 2.6 0 1 0 1.8 2.5V2.5h2.7A3.6 3.6 0 0 0 19 5.5z"/></svg>',
+  };
+  const socials = (a.socials || []).map(s => {
+    const icon = SOCIAL_ICON[s.platform] || "";
+    return `
+      <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer"
+         title="${esc(s.label)}" aria-label="${esc(s.label)}"
+         class="w-10 h-10 flex items-center justify-center rounded-full
+                bg-brand-50 text-brand-500 border border-brand-100
+                hover:bg-brand-500 hover:text-white hover:border-brand-500
+                transition-colors duration-200">${icon}</a>`;
+  }).join("");
+  const socialBlock = socials ? `
+          <h3 class="font-display text-brand-500 mb-3 mt-7">社交平台</h3>
+          <div class="flex flex-wrap gap-3">${socials}</div>` : "";
+
   $("about").innerHTML = `
     <div class="max-w-6xl mx-auto px-5 py-20">
       <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-10 text-center">关于 曾沛慈</h2>
@@ -92,7 +116,7 @@ function renderAbout() {
         </div>
         <div class="md:col-span-2 bg-white rounded-2xl shadow-sm border border-brand-100 p-6">
           <h3 class="font-display text-brand-500 mb-3">个人资料</h3>
-          <dl>${info}</dl>
+          <dl>${info}</dl>${socialBlock}
         </div>
       </div>
     </div>`;

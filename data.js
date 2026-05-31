@@ -26,6 +26,15 @@ const SITE = {
       { label: "出道", value: "2007 年（Sunny Hill 时期）" },
     ],
     source: "资料整理自维基百科等公开来源，仅供粉丝交流。",
+    // ---- 社交平台（仅放已核实的官方账号；保留 icon）----
+    // platform 决定显示哪个 icon：bilibili / youtube / instagram / weibo / facebook / douyin
+    socials: [
+      { platform: "bilibili",  label: "哔哩哔哩", url: "https://space.bilibili.com/3546795672079131" },
+      { platform: "youtube",   label: "YouTube",  url: "https://www.youtube.com/channel/UCLq1-YKPPy1Z8zLiNqe8bBQ" },
+      { platform: "instagram", label: "Instagram", url: "https://www.instagram.com/tseng_pets_ohyeah/" },
+      { platform: "weibo",     label: "微博",      url: "https://weibo.com/u/1797539504" },
+      { platform: "facebook",  label: "Facebook", url: "https://www.facebook.com/ohyeahpetsofficial" },
+    ],
   },
 
   // ---- 音乐作品（专辑时间线 + CD 唱片展示）----
@@ -88,13 +97,6 @@ const SITE = {
   //   biliSpace: "UID"      -> B站个人主页入口卡（点击跳转该账号空间）
   //   都留空                -> （已无占位卡）
   videos: [
-    // 曾沛慈 B站官方账号入口（已 API 核实：UID 3546795672079131，官方认证「歌手演员曾沛慈」）
-    { biliSpace: "3546795672079131", title: "曾沛慈 B站官方主页",
-      channel: "曾沛慈_TsengPets · 官方认证", note: "29 万粉丝 · 点击进入她的 B站视频空间",
-      avatar: "https://i0.hdslb.com/bfs/face/365e3bacc6d0afc1baab6b61613260dd1bc0dc2e.jpg",
-      fans: "29 万" },
-    // 内嵌具体 B站视频：拿到真实 BV 号后取消下一行注释并填入即可（示例格式）
-    // { bili: "BVxxxxxxxxxx", title: "视频标题", channel: "曾沛慈 · B站官方", note: "视频说明" },
     { bili: "BV1z5GH6xExR", title: "《乘风2026》三公帮唱舞台 · 寻「宝莲」",
       channel: "B站 · UP主 JIA孟佳", note: "曾沛慈 × 徐梦洁 × 孟佳 × 王霏霏 三公帮唱舞台（64万播放）" },
     { bili: "BV1SgZFBfE95", title: "《言不由衷》舞台",
