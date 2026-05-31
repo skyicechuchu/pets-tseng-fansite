@@ -152,6 +152,41 @@ function renderVideos() {
         <p class="text-xs text-brand-500 mt-0.5">${esc(v.channel)}</p>
         <p class="text-xs text-gray-400">${esc(v.note)}</p>
       </div>`;
+    if (v.bili) {
+      // 内嵌 B站官方播放器（真实 BV 号）
+      return `
+      <div class="bg-white rounded-2xl shadow-sm border border-brand-100 overflow-hidden">
+        <div class="relative w-full" style="aspect-ratio:16/9;">
+          <iframe class="absolute inset-0 w-full h-full" loading="lazy"
+            src="//player.bilibili.com/player.html?bvid=${esc(v.bili)}&autoplay=0&high_quality=1&danmaku=0"
+            title="${esc(v.title)}" frameborder="0" scrolling="no"
+            allowfullscreen="true" allow="fullscreen"></iframe>
+        </div>${head}
+      </div>`;
+    }
+    if (v.biliSpace) {
+      // B站个人主页入口卡
+      const avatar = v.avatar
+        ? `<img src="${esc(v.avatar)}" alt="${esc(v.title)}" referrerpolicy="no-referrer"
+             class="w-20 h-20 rounded-full object-cover ring-4 ring-white shadow-md">`
+        : `<div class="w-20 h-20 rounded-full bg-white/30 flex items-center justify-center text-white text-2xl font-bold">B</div>`;
+      const fans = v.fans
+        ? `<span class="inline-flex items-center gap-1 bg-white/25 text-white text-xs font-medium px-2.5 py-1 rounded-full mt-2">★ ${esc(v.fans)}粉丝</span>`
+        : "";
+      return `
+      <a href="https://space.bilibili.com/${esc(v.biliSpace)}"
+         target="_blank" rel="noopener noreferrer"
+         class="group bg-white rounded-2xl shadow-sm border border-brand-100
+                overflow-hidden hover:shadow-lg transition-shadow duration-200 block">
+        <div class="relative w-full flex flex-col items-center justify-center gap-2
+                    bg-gradient-to-br from-[#fb7299] to-[#ff95b8] text-white"
+             style="aspect-ratio:16/9;">
+          ${avatar}
+          <span class="text-sm font-semibold tracking-wide">哔哩哔哩 · 进入官方空间</span>
+          ${fans}
+        </div>${head}
+      </a>`;
+    }
     if (v.ytid) {
       return `
       <div class="bg-white rounded-2xl shadow-sm border border-brand-100 overflow-hidden">

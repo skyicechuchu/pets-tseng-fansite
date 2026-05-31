@@ -88,9 +88,19 @@ const SITE = {
   ],
 
   // ---- 影音视频 ----
-  // ytid 有值 -> 可播放内嵌（均经 oembed 核实为官方真实 MV）
-  // ytid 留空 -> 显示「YouTube 搜索」占位卡（避免嵌入死链）
+  // 卡片类型（按字段自动判断，优先级从上到下）：
+  //   bili: "BVxxxx"        -> 内嵌 B站官方播放器（拿到真实 BV 号后填这里即可内嵌）
+  //   biliSpace: "UID"      -> B站个人主页入口卡（点击跳转该账号空间）
+  //   ytid: "xxxx"          -> 内嵌 YouTube 播放器（均经 oembed 核实为官方真实 MV）
+  //   都留空                -> 显示「YouTube 搜索」占位卡（避免嵌入死链）
   videos: [
+    // 曾沛慈 B站官方账号入口（已 API 核实：UID 3546795672079131，官方认证「歌手演员曾沛慈」）
+    { biliSpace: "3546795672079131", title: "曾沛慈 B站官方主页",
+      channel: "曾沛慈_TsengPets · 官方认证", note: "29 万粉丝 · 点击进入她的 B站视频空间",
+      avatar: "https://i0.hdslb.com/bfs/face/365e3bacc6d0afc1baab6b61613260dd1bc0dc2e.jpg",
+      fans: "29 万" },
+    // 内嵌具体 B站视频：拿到真实 BV 号后取消下一行注释并填入即可（示例格式）
+    // { bili: "BVxxxxxxxxxx", title: "视频标题", channel: "曾沛慈 · B站官方", note: "视频说明" },
     { ytid: "olODk6jhMhM", title: "一个人想着一个人 (Official HD MV)",
       channel: "Timeless Music · 官方", note: "《终极一班 2》主题曲" },
     { ytid: "7dKOb-dKAyg", title: "不过失去了一点点 Just Lose It (官方版 MV)",
