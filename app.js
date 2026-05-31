@@ -78,6 +78,10 @@ function renderMusic() {
            <span class="font-display text-lg leading-tight">${esc(al.title)}</span>
            <span class="text-brand-100 text-xs mt-1">${esc(al.year)}</span>
          </div>`;
+    const coverWrap = al.link
+      ? `<a href="${esc(al.link)}" target="_blank" rel="noopener noreferrer"
+            class="relative z-10 block w-full h-full" title="在 Apple Music 收听">${coverInner}</a>`
+      : `<div class="relative z-10 w-full h-full">${coverInner}</div>`;
     return `
     <div class="album-card group bg-white rounded-2xl shadow-sm border border-brand-100
                 p-5 hover:shadow-lg transition-shadow duration-200">
@@ -88,7 +92,7 @@ function renderMusic() {
                       group-hover:[animation-play-state:running]"></div>
         </div>
         <!-- 专辑封面：盖在上层 -->
-        <div class="relative z-10 w-full h-full">${coverInner}</div>
+        ${coverWrap}
       </div>
       <div class="flex items-center gap-2 mb-1">
         <span class="text-xs font-bold bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">${esc(al.year)}</span>
