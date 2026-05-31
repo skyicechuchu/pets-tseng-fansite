@@ -158,7 +158,7 @@ function renderVideos() {
       <div class="bg-white rounded-2xl shadow-sm border border-brand-100 overflow-hidden">
         <div class="relative w-full" style="aspect-ratio:16/9;">
           <iframe class="absolute inset-0 w-full h-full" loading="lazy"
-            src="//player.bilibili.com/player.html?bvid=${esc(v.bili)}&autoplay=0&high_quality=1&danmaku=0"
+            src="https://player.bilibili.com/player.html?bvid=${esc(v.bili)}&autoplay=0&high_quality=1&danmaku=0"
             title="${esc(v.title)}" frameborder="0" scrolling="no"
             allowfullscreen="true" allow="fullscreen"></iframe>
         </div>${head}
