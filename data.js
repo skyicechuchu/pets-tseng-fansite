@@ -106,6 +106,11 @@ const SITE = {
     title: "应援打投实时看板",
     subtitle: "比赛 / 打投期间的应援数据汇总",
     isDemo: true, // 显示「示例数据」标识
+    weibo: {
+      label: "微博《乘风2026》实时榜",
+      note: "示例数据 · 实时排名请见微博",
+      url: "http://t.cn/AXIilX4p",
+    },
     stats: [
       { label: "累计投票数", value: "1,284,560", delta: "+12,340", up: true },
       { label: "音源榜排名", value: "#3", delta: "↑2", up: true },

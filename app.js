@@ -192,6 +192,30 @@ function renderDashboard() {
     ? `<span class="inline-block text-xs font-bold bg-yellow-100 text-yellow-700 px-2.5 py-1 rounded-full">示例数据</span>`
     : "";
 
+  // 微博《乘风2026》实时榜入口
+  const weiboIcon = '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M9.8 19.6c-3.9.4-7.3-1.4-7.5-4s2.7-5 6.6-5.4 7.3 1.4 7.5 4-2.7 5-6.6 5.4zm.6-3.1c-.4.6-1.2.9-1.8.6s-.7-1-.4-1.6 1.1-.9 1.7-.6.8 1 .5 1.6zm1.3-1.6c-.1.2-.4.3-.6.2s-.3-.4-.2-.6.4-.3.6-.2.3.4.2.6zM18.6 8.6c-.3-.1-.6-.2-.4-.6.3-.7.3-1.4 0-1.9-.6-.9-2.2-.8-4.1 0 0 0-.6.3-.4-.2.3-1 .3-1.8-.2-2.3-1-1-3.8.1-6.2 2.5C5.3 8 4.2 9.9 4.2 11.5l.9-.9c.3-1.1 1.2-2.5 2.8-3.8 2-1.7 3.7-2.1 4.1-1.6.2.3 0 .9-.2 1.4 0 0-.2.5.2.5 1.5-.5 2.7-.4 3.1.2.2.3.1.8-.1 1.3 0 0-.1.3.2.3 1.3.4 2.7 1.4 2.7 3.1 0 2.9-4.2 6.5-9.3 6.5-3.9 0-7.4-2.1-7.4-5.7 0-1.9 1.2-4.1 3.2-6.2C9.6 4 12.6 2.9 14 4.3c.6.6.7 1.7.3 2.9 0 0-.2.5.4.3 1.8-.7 3.4-.4 4 .5.4.6.4 1.5-.1 2.5 0 0-.2.3.2.4 1.4.4 2.9 1.5 2.9 3.3 0 .3 0 .5-.1.8.4-1 .6-2 .6-3 0-2.3-1.6-3.6-2.7-4.1z"/><circle cx="19" cy="6.5" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+  let weiboBanner = "", weiboInline = "";
+  if (c.weibo) {
+    const w = c.weibo;
+    weiboBanner = `
+      <a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer"
+         aria-label="${esc(w.label)}（前往微博查看实时排名）"
+         class="group flex items-center justify-center gap-3 max-w-2xl mx-auto mb-8
+                bg-[#ff8200] hover:bg-[#e65c00] text-white font-medium cursor-pointer
+                px-6 py-3.5 rounded-full shadow-md hover:shadow-lg
+                transition-all duration-200">
+        ${weiboIcon}
+        <span>${esc(w.label)}</span>
+        <span class="opacity-90 group-hover:translate-x-0.5 transition-transform">→</span>
+      </a>`;
+    weiboInline = `
+      <a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer"
+         aria-label="前往微博查看实时排名"
+         class="inline-flex items-center gap-1 text-xs text-[#ff8200] hover:text-[#e65c00]
+                cursor-pointer transition-colors">
+        ${esc(w.note)} ${ICON.external}</a>`;
+  }
+
   const stats = c.stats.map(s => `
     <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5">
       <p class="text-sm text-gray-500">${esc(s.label)}</p>
@@ -231,12 +255,17 @@ function renderDashboard() {
         <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-2 text-center">${esc(c.title)}</h2>
         <p class="text-center text-gray-500 mb-10">${esc(c.subtitle)}</p>
 
+        ${weiboBanner}
+
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">${stats}</div>
         <div class="mb-8">${funding}</div>
 
         <div class="grid md:grid-cols-2 gap-6">
           <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5 min-w-0">
-            <h3 class="font-medium text-gray-800 mb-3">${esc(r.title)}</h3>
+            <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <h3 class="font-medium text-gray-800">${esc(r.title)}</h3>
+              ${weiboInline}
+            </div>
             <div class="relative w-full min-w-0" style="height:260px;">
               <canvas id="rankChart"></canvas>
             </div>
