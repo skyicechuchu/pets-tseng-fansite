@@ -58,40 +58,44 @@ function renderHero() {
   const s = SITE;
   const imgs = Array.isArray(s.heroImages) ? s.heroImages : [];
   const slides = imgs.map((src, i) => `
-        <div class="hero-slide absolute inset-0 bg-center bg-cover ${i === 0 ? "is-active" : ""}"
-             style="background-image:url('${esc(src)}')"></div>`).join("");
+        <img src="${esc(src)}" alt="${esc(s.name)}" loading="eager"
+             class="hero-photo absolute inset-0 w-full h-full object-contain ${i === 0 ? "is-active" : ""}" />`).join("");
   const credit = s.heroImageCredit
-    ? `<p class="absolute bottom-2 right-3 text-[10px] text-white/60 z-20">${esc(s.heroImageCredit)}</p>`
+    ? `<p class="text-[10px] text-slate-400 text-center mt-3 px-4">${esc(s.heroImageCredit)}</p>`
     : "";
   $("hero").innerHTML = `
-    <div class="relative overflow-hidden bg-gradient-to-br from-brand-400 via-brand-500 to-brand-700 text-white">
-      <div class="hero-slides absolute inset-0">${slides}</div>
-      <div class="absolute inset-0 bg-gradient-to-b from-brand-700/50 via-brand-600/40 to-brand-800/70 z-10"></div>
-      <div class="absolute inset-0 opacity-20 z-10"
-           style="background:radial-gradient(circle at 20% 20%, #fff 0, transparent 40%),
-                  radial-gradient(circle at 80% 60%, #fff 0, transparent 35%);"></div>
-      <div class="relative z-20 max-w-6xl mx-auto px-5 py-24 sm:py-32 text-center">
-        <p class="font-display tracking-widest text-brand-100 mb-3">${esc(s.enName)}</p>
-        <h1 class="font-display text-5xl sm:text-7xl mb-5 drop-shadow-lg">${esc(s.name)}</h1>
-        <p class="text-lg sm:text-2xl font-medium mb-2 drop-shadow">${esc(s.tagline)}</p>
-        <p class="text-brand-100 max-w-xl mx-auto mb-8 drop-shadow">${esc(s.heroNote)}</p>
-        <a href="#music"
-           class="inline-flex items-center gap-2 bg-white text-brand-600 font-bold
-                  px-7 py-3 rounded-full shadow-lg hover:shadow-xl hover:scale-105
-                  transition-all duration-200">
-          ${ICON.play} 探索音乐
-        </a>
+    <div class="relative overflow-hidden bg-gradient-to-b from-brand-50 to-white">
+      <div class="max-w-6xl mx-auto px-5 py-14 sm:py-20
+                  grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10 items-center">
+        <div class="text-center md:text-left order-2 md:order-1">
+          <p class="font-display tracking-widest text-brand-400 mb-3">${esc(s.enName)}</p>
+          <h1 class="font-display text-5xl sm:text-7xl mb-5 text-brand-600">${esc(s.name)}</h1>
+          <p class="text-lg sm:text-2xl font-medium mb-2 text-slate-800">${esc(s.tagline)}</p>
+          <p class="text-slate-500 max-w-xl mx-auto md:mx-0 mb-8">${esc(s.heroNote)}</p>
+          <a href="#music"
+             class="inline-flex items-center gap-2 bg-brand-500 text-white font-bold
+                    px-7 py-3 rounded-full shadow-lg hover:bg-brand-600 hover:shadow-xl hover:scale-105
+                    transition-all duration-200">
+            ${ICON.play} 探索音乐
+          </a>
+        </div>
+        <div class="order-1 md:order-2">
+          <div class="relative w-full aspect-square max-w-md mx-auto
+                      rounded-2xl overflow-hidden shadow-xl ring-4 ring-white bg-brand-50">
+            <div class="hero-photos absolute inset-0">${slides}</div>
+          </div>
+          ${credit}
+        </div>
       </div>
-      ${credit}
     </div>`;
-  // 背景轮播：每 5 秒淡入淡出切换
+  // 照片轮播：每 5 秒淡入淡出切换
   if (imgs.length > 1) {
     let idx = 0;
-    const slideEls = $("hero").querySelectorAll(".hero-slide");
+    const els = $("hero").querySelectorAll(".hero-photo");
     setInterval(() => {
-      slideEls[idx].classList.remove("is-active");
-      idx = (idx + 1) % slideEls.length;
-      slideEls[idx].classList.add("is-active");
+      els[idx].classList.remove("is-active");
+      idx = (idx + 1) % els.length;
+      els[idx].classList.add("is-active");
     }, 5000);
   }
 }
