@@ -123,6 +123,23 @@ const SITE = {
       channel: "B站 · UP主 王濛", note: "曾沛慈 × 王濛 × 张灿 二公舞台（108万播放）" },
   ],
 
+  // ---- 行程 / 演出排期 ----
+  // 来源：小红书公开行程整理（2026.06–2026.07）。
+  // 每条：date(YYYY-MM-DD) / weekday / time(留空则显示「时间待定」) / name / venue / city
+  // status: "upcoming"(默认) / "done"；留空按日期自动判断是否已过期。
+  schedule: {
+    title: "演出行程",
+    subtitle: "2026 年 6–7 月公开行程整理",
+    source: "行程资讯整理自公开资料（小红书），仅供参考，实际活动时间、地点及内容请以官方公告为准。",
+    sourceUrl: "https://www.xiaohongshu.com/discovery/item/6a1dabbb000000000702e6d4",
+    events: [
+      { date: "2026-06-13", weekday: "六", time: "18:00", name: "第21屆 KKBOX 風雲榜", venue: "臺北小巨蛋", city: "臺北" },
+      { date: "2026-07-05", weekday: "日", time: "", name: "熱氣球嘉年華", venue: "臺東鹿野高台", city: "臺東" },
+      { date: "2026-07-12", weekday: "日", time: "19:30", name: "GMA 榜中榜・廣州超級演唱會", venue: "廣州大學城體育中心體育場", city: "廣州" },
+      { date: "2026-07-17", weekday: "五", time: "19:00", name: "星河回響超級演唱會", venue: "日照奎山體育中心體育場", city: "日照" },
+    ],
+  },
+
   // ---- 应援打投数据看板 ----【示例数据】拿到真实数字后替换 ----
   campaign: {
     title: "应援打投实时看板",

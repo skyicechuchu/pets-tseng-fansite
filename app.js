@@ -270,6 +270,80 @@ function renderVideos() {
       <div class="grid sm:grid-cols-2 lg:grid-cols-2 gap-6">${cards}</div>
     </div>`;
 }
+function renderSchedule() {
+  const sc = SITE.schedule;
+  if (!sc || !Array.isArray(sc.events) || !sc.events.length) {
+    $("schedule").innerHTML = "";
+    return;
+  }
+  // 今天（按本地日期）零点，用于判断已结束的行程
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  // 解析日期 + 排序（升序）
+  const evts = sc.events
+    .map(e => {
+      const d = new Date(e.date + "T00:00:00");
+      return { ...e, _d: d, _done: e.status === "done" || (e.status !== "upcoming" && d < today) };
+    })
+    .sort((a, b) => a._d - b._d);
+
+  const MONTH = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+  const calIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+  const pinIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 shrink-0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  const clockIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 shrink-0"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+
+  const rows = evts.map(e => {
+    const m = e._d.getMonth(), day = e._d.getDate();
+    const done = e._done;
+    const dateBox = `
+      <div class="flex-shrink-0 w-16 sm:w-20 text-center rounded-xl py-2.5
+                  ${done ? "bg-gray-100 text-gray-400" : "bg-brand-500 text-white shadow-sm"}">
+        <div class="text-[11px] font-medium leading-none">${MONTH[m]}</div>
+        <div class="font-display text-2xl sm:text-3xl leading-tight">${day}</div>
+        <div class="text-[11px] leading-none">周${esc(e.weekday)}</div>
+      </div>`;
+    const timeStr = e.time ? e.time : "时间待定";
+    const badge = done
+      ? `<span class="inline-block text-[11px] font-bold bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full">已结束</span>`
+      : `<span class="inline-block text-[11px] font-bold bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">即将到来</span>`;
+    const mapHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.venue)}`;
+    return `
+    <div class="flex items-stretch gap-4 bg-white rounded-2xl shadow-sm border border-brand-100
+                p-4 hover:shadow-md transition-shadow duration-200 ${done ? "opacity-70" : ""}">
+      ${dateBox}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap mb-1">
+          ${badge}
+          ${e.city ? `<span class="text-[11px] text-gray-400">${esc(e.city)}</span>` : ""}
+        </div>
+        <h3 class="font-medium text-gray-800 leading-snug">${esc(e.name)}</h3>
+        <div class="mt-2 space-y-1 text-sm text-gray-500">
+          <p class="flex items-center gap-1.5 text-brand-500">${clockIcon}<span>${esc(timeStr)}</span></p>
+          <a href="${mapHref}" target="_blank" rel="noopener noreferrer"
+             class="flex items-start gap-1.5 hover:text-brand-600 transition-colors"
+             title="在地图中查看">${pinIcon}<span class="break-words">${esc(e.venue)}</span></a>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  const srcLink = sc.sourceUrl
+    ? `<a href="${esc(sc.sourceUrl)}" target="_blank" rel="noopener noreferrer"
+          class="inline-flex items-center gap-1 text-brand-500 hover:text-brand-600 transition-colors">原帖 ${ICON.external}</a>`
+    : "";
+
+  $("schedule").innerHTML = `
+    <div class="bg-white/60">
+      <div class="max-w-6xl mx-auto px-5 py-20">
+        <div class="text-center mb-2 flex items-center justify-center gap-2 text-brand-400">${calIcon}</div>
+        <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-2 text-center">${esc(sc.title)}</h2>
+        <p class="text-center text-gray-500 mb-10">${esc(sc.subtitle)}</p>
+        <div class="grid sm:grid-cols-2 gap-5 max-w-4xl mx-auto">${rows}</div>
+        <p class="text-xs text-gray-400 text-center mt-8 max-w-2xl mx-auto">
+          ${esc(sc.source)} ${srcLink}</p>
+      </div>
+    </div>`;
+}
 function renderDashboard() {
   const c = SITE.campaign;
   const demoBadge = c.isDemo
@@ -441,6 +515,7 @@ function init() {
   try { renderAbout(); } catch (e) { console.error("renderAbout", e); }
   try { renderMusic(); } catch (e) { console.error("renderMusic", e); }
   try { renderVideos(); } catch (e) { console.error("renderVideos", e); }
+  try { renderSchedule(); } catch (e) { console.error("renderSchedule", e); }
   try { renderDashboard(); } catch (e) { console.error("renderDashboard", e); }
   try { renderFooter(); } catch (e) { console.error("renderFooter", e); }
   try { initNavHighlight(); } catch (e) { console.error("initNavHighlight", e); }
