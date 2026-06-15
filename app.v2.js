@@ -366,6 +366,7 @@ let monitorHistorySource = "local";
 let monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
 let monitorRetryTimer = null;
 let monitorAutoRetryCount = 0;
+let monitorRenderToken = 0;
 let monitorWindowMode = "today";
 let monitorViewAnchorTs = null;
 let mgtvForegroundRefreshBound = false;
@@ -444,9 +445,16 @@ async function fetchWorkerJson(path, params, mgtv) {
   const res = await fetch(workerUrl(path, params, mgtv), {
     headers: { "Accept": "application/json" },
     cache: "no-store",
+    mode: "cors",
+    credentials: "omit",
   });
   const text = await res.text();
-  const json = text ? JSON.parse(text) : {};
+  let json = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch (err) {
+    throw new Error(`Worker 返回非 JSON：${text.slice(0, 80) || err.message}`);
+  }
   if (!res.ok || json.ok === false) throw new Error(json.error || `Worker HTTP ${res.status}`);
   return json;
 }
@@ -465,6 +473,14 @@ async function fetchWorkerJsonWithRetry(path, params, mgtv, retries) {
     }
   }
   throw lastError;
+}
+async function fetchMonitorHistoryJson(dataset, mgtv) {
+  try {
+    return await fetchWorkerJsonWithRetry(dataset.historyPath, { limit: MONITOR_WORKER_HISTORY_LIMIT }, mgtv, 2);
+  } catch (err) {
+    if (MONITOR_WORKER_HISTORY_LIMIT <= 360) throw err;
+    return fetchWorkerJsonWithRetry(dataset.historyPath, { limit: 360, _fallback: Date.now() }, mgtv, 1);
+  }
 }
 function hydrateMgtvState(raw, source, meta) {
   const periods = (raw.periods || []).map(period => Object.assign({}, period, {
@@ -1048,7 +1064,7 @@ async function loadMonitorHistoryForDisplay(c) {
   monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
   if (workerApiBase(c.mgtv)) {
     try {
-      const json = await fetchWorkerJsonWithRetry(dataset.historyPath, { limit: MONITOR_WORKER_HISTORY_LIMIT }, c.mgtv, 2);
+      const json = await fetchMonitorHistoryJson(dataset, c.mgtv);
       const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
       monitorHistorySource = "worker";
       monitorHistoryStatus = { ok: true, source: "worker", count: snapshots.length, error: "" };
@@ -1062,7 +1078,7 @@ async function loadMonitorHistoryForDisplay(c) {
         ok: false,
         source: "worker",
         count: 0,
-        error: e && e.message ? e.message : String(e),
+        error: e && e.message ? e.message : String(e || "未知错误"),
       };
     }
   }
@@ -1446,6 +1462,21 @@ function scheduleMonitorRetry() {
     renderMonitor();
   }, 6000);
 }
+function renderMonitorLoading(c) {
+  const datasetTabs = monitorDatasetTabs(c);
+  $("monitor").innerHTML = `
+    <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
+      <div class="max-w-6xl mx-auto px-5 py-20 text-center">
+        <span class="inline-block rounded-full bg-white px-3 py-1 text-xs font-medium text-brand-600 shadow-sm">自动监控</span>
+        <h2 class="mt-4 font-display text-3xl sm:text-4xl text-brand-600">数据监控</h2>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+          ${datasetTabs}
+        </div>
+        <p class="mx-auto mt-5 max-w-2xl text-gray-500">正在连接后台时间序列...</p>
+      </div>
+    </div>`;
+  attachMonitorHandlers(c, []);
+}
 function renderMonitorEmpty(c, history) {
   const dataset = monitorDatasetConfig();
   const samples = history.length;
@@ -1462,6 +1493,9 @@ function renderMonitorEmpty(c, history) {
           重新连接
         </button>`
     : "";
+  const errorDetail = hasWorker && monitorHistoryStatus.ok === false && monitorHistoryStatus.error
+    ? `<p class="mx-auto mt-2 max-w-2xl text-xs text-gray-400">错误信息：${esc(monitorHistoryStatus.error)}</p>`
+    : "";
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20 text-center">
@@ -1473,6 +1507,7 @@ function renderMonitorEmpty(c, history) {
         <p class="mx-auto mt-3 max-w-2xl text-gray-500">
           ${esc(message)}
         </p>
+        ${errorDetail}
         ${retryButton}
       </div>
     </div>`;
@@ -1480,16 +1515,20 @@ function renderMonitorEmpty(c, history) {
   if (hasWorker && monitorHistoryStatus.ok === false) scheduleMonitorRetry();
   alignMonitorHash();
 }
-async function renderMonitor() {
+async function renderMonitor(options) {
+  const opts = options || {};
   const c = SITE.campaign;
   if (!c || !c.mgtv) return;
-  const dataset = monitorDatasetConfig();
+  const token = ++monitorRenderToken;
+  if (opts.showLoading) renderMonitorLoading(c);
   const history = await loadMonitorHistoryForDisplay(c);
+  if (token !== monitorRenderToken) return;
   if (history.length < 1) {
     renderMonitorEmpty(c, history);
     return;
   }
 
+  const dataset = monitorDatasetConfig();
   const periods = monitorPeriodIds(history);
   const preferred = Number(monitorSelectedPeriodIds[dataset.key] || latestPeriodId(history) || (periods[0] && periods[0].periodId));
   const selected = periods.find(p => Number(p.periodId) === preferred) || periods[0];
@@ -1599,7 +1638,9 @@ function attachMonitorHandlers(c, history) {
       monitorAutoRetryCount = 0;
       btn.disabled = true;
       btn.textContent = "连接中...";
-      renderMonitor();
+      renderMonitor({ showLoading: true }).catch(err => {
+        console.error("renderMonitor retry", err);
+      });
     });
   });
   document.querySelectorAll("[data-monitor-kind]").forEach(btn => {
