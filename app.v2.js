@@ -782,10 +782,6 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState) {
         <p class="text-center text-gray-500 mb-6">${esc(c.subtitle)}</p>
         <div class="mb-8 flex flex-wrap items-center justify-center gap-4 text-sm">
           ${sourceLink}
-          <button type="button" data-mgtv-refresh
-            class="rounded-full border border-brand-200 bg-white px-4 py-2 font-medium text-brand-600 hover:border-brand-500 hover:text-brand-700 transition-colors">
-            立即刷新
-          </button>
         </div>
 
         ${hotVoteSection}
