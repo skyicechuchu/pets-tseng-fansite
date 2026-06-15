@@ -1250,14 +1250,6 @@ function resolveMonitorWindow(history) {
     bucketMs: monitorBucketMs(spanMs),
   };
 }
-function panMonitorWindow(history, direction) {
-  const windowInfo = resolveMonitorWindow(history);
-  const step = monitorWindowMode === "today"
-    ? 24 * 60 * 60 * 1000
-    : Math.max(windowInfo.spanMs * 0.2, 60 * 1000);
-  monitorViewAnchorTs = (monitorViewAnchorTs || (history[history.length - 1] && history[history.length - 1].ts) || Date.now()) + direction * step;
-  renderMonitor();
-}
 function bucketLabel(ts, spanMs) {
   const opts = spanMs > 24 * 60 * 60 * 1000
     ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }
@@ -1616,9 +1608,9 @@ async function renderMonitor(options) {
           <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
             <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <h3 class="font-medium text-gray-800">${esc(dataset.key === "hot" ? dataset.title : `${selected.label}增量走势`)}</h3>
-              <p class="text-xs text-gray-400">鼠标滚轮切换时间 · 当前按 ${esc(formatMonitorDuration(windowInfo.bucketMs))} 合并</p>
+              <p class="text-xs text-gray-400">当前按 ${esc(formatMonitorDuration(windowInfo.bucketMs))} 合并</p>
             </div>
-            <div class="relative w-full min-w-0" data-monitor-chart-wheel style="height:420px;">
+            <div class="relative w-full min-w-0" style="height:420px;">
               <canvas id="monitorRateChart"></canvas>
             </div>
           </div>
@@ -1666,15 +1658,6 @@ function attachMonitorHandlers(c, history) {
       renderMonitor();
     });
   });
-  const wheelTarget = document.querySelector("[data-monitor-chart-wheel]");
-  if (wheelTarget) {
-    wheelTarget.addEventListener("wheel", event => {
-      event.preventDefault();
-      const raw = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-      if (!raw) return;
-      panMonitorWindow(history || [], raw > 0 ? 1 : -1);
-    }, { passive: false });
-  }
 }
 function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visibleRows) {
   if (monitorRateChart) monitorRateChart.destroy();
