@@ -630,10 +630,7 @@ function renderHotVoteDashboardSection(c, hotState) {
     <tr class="${row.isTarget ? "bg-brand-50/80 text-brand-800" : ""}">
       <td class="whitespace-nowrap px-3 py-2 font-bold">#${row.rank}</td>
       <td class="px-3 py-2 font-medium">${esc(row.title)}</td>
-      <td class="px-3 py-2 text-gray-500">${esc(row.guest || "")}</td>
       <td class="px-3 py-2 text-right">${fmtInt(rowValue(row))}</td>
-      <td class="px-3 py-2 text-right">${fmtInt(rowSecondaryValue(row))}</td>
-      <td class="px-3 py-2 text-right">${esc(row.status || (rowValue(row) >= rowSecondaryValue(row) ? "夯爆了" : "尬场了"))}</td>
     </tr>`).join("");
 
   return `
@@ -665,10 +662,7 @@ function renderHotVoteDashboardSection(c, hotState) {
                 <tr>
                   <th class="px-3 py-2 text-left">排名</th>
                   <th class="px-3 py-2 text-left">姐姐</th>
-                  <th class="px-3 py-2 text-left">曲目</th>
                   <th class="px-3 py-2 text-right">夯爆了</th>
-                  <th class="px-3 py-2 text-right">尬场了</th>
-                  <th class="px-3 py-2 text-right">状态</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
