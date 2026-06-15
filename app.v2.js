@@ -351,7 +351,8 @@ let dashboardState = null;
 let dashboardSelectedPeriodId = null;
 let dashboardHashAligned = false;
 let monitorRateChart = null;
-let monitorSelectedPeriodId = null;
+let monitorDataKind = "stage";
+const monitorSelectedPeriodIds = {};
 let monitorHashAligned = false;
 let monitorHistorySource = "local";
 let monitorWindowMode = "today";
@@ -361,6 +362,36 @@ let mgtvLastForegroundRefreshAt = 0;
 const MONITOR_STORAGE_KEY = "pets_mgtv_monitor_v1";
 const MONITOR_MAX_SNAPSHOTS = 720;
 const MONITOR_WORKER_HISTORY_LIMIT = 1440;
+const MONITOR_DATASETS = {
+  stage: {
+    key: "stage",
+    label: "舞台助力",
+    title: "舞台助力增量走势",
+    emptyName: "舞台助力",
+    historyPath: "/history",
+    latestPath: "/latest",
+    valueLabel: "作品",
+    yAxisLabel: "新增助力数",
+    sourceLabel: "芒推推页面",
+    sourceUrlKey: "sourceUrl",
+  },
+  hot: {
+    key: "hot",
+    label: "姐姐夯值",
+    title: "姐姐夯值投送增量走势",
+    emptyName: "姐姐夯值",
+    historyPath: "/hot/history",
+    latestPath: "/hot/latest",
+    valueLabel: "姐姐",
+    yAxisLabel: "新增夯爆了",
+    sourceLabel: "姐姐夯值页",
+    sourceUrlKey: "hotVoteSourceUrl",
+  },
+};
+
+function monitorDatasetConfig() {
+  return MONITOR_DATASETS[monitorDataKind] || MONITOR_DATASETS.stage;
+}
 
 function fmtInt(n) {
   return Number(n || 0).toLocaleString("zh-CN");
@@ -847,20 +878,27 @@ function hydrateMonitorSnapshot(snapshot) {
       interactionValue: Number(row.interactionValue || 0),
       roundAmount: Number(row.roundAmount || 0),
       onScreenCount: Number(row.onScreenCount || 0),
+      hotValue: Number(row.hotValue || 0),
+      awkwardValue: Number(row.awkwardValue || 0),
       isTarget: Boolean(row.isTarget),
     })),
   });
 }
 async function loadMonitorHistoryForDisplay(c) {
+  const dataset = monitorDatasetConfig();
   if (workerApiBase(c.mgtv)) {
     try {
-      const json = await fetchWorkerJson("/history", { limit: MONITOR_WORKER_HISTORY_LIMIT }, c.mgtv);
+      const json = await fetchWorkerJson(dataset.historyPath, { limit: MONITOR_WORKER_HISTORY_LIMIT }, c.mgtv);
       const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
       monitorHistorySource = "worker";
       return snapshots;
     } catch (e) {
       console.warn("Worker 历史暂时不可用，改用浏览器本地历史", e);
     }
+  }
+  if (dataset.key !== "stage") {
+    monitorHistorySource = "worker";
+    return [];
   }
   monitorHistorySource = "local";
   return loadMonitorHistory();
@@ -1190,19 +1228,49 @@ function monitorWindowSummary(metrics, buckets) {
 }
 function latestPeriodId(history) {
   const latest = history[history.length - 1];
+  if (monitorDataKind !== "stage") {
+    return Number(latest && latest.currentPeriodId || 0);
+  }
   return Number((dashboardState && dashboardState.currentPeriodId) || (latest && latest.currentPeriodId) || 0);
 }
+function monitorDatasetTabs(c) {
+  return Object.keys(MONITOR_DATASETS).map(key => {
+    const item = MONITOR_DATASETS[key];
+    const active = item.key === monitorDataKind;
+    const sourceUrl = c.mgtv && c.mgtv[item.sourceUrlKey];
+    const link = sourceUrl
+      ? `<a href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer"
+            class="${active ? "text-white/80 hover:text-white" : "text-gray-400 hover:text-brand-600"}"
+            aria-label="${esc(item.sourceLabel)}">${ICON.external}</a>`
+      : "";
+    return `
+      <span class="inline-flex items-center overflow-hidden rounded-full border
+        ${active ? "border-brand-500 bg-brand-500 text-white" : "border-brand-100 bg-white text-gray-600"}">
+        <button type="button" data-monitor-kind="${esc(item.key)}"
+          class="px-4 py-2 text-sm font-medium transition-colors
+            ${active ? "text-white" : "hover:text-brand-700"}">
+          ${esc(item.label)}
+        </button>
+        ${link ? `<span class="pr-3">${link}</span>` : ""}
+      </span>`;
+  }).join("");
+}
 function renderMonitorEmpty(c, history) {
+  const dataset = monitorDatasetConfig();
   const samples = history.length;
   const hasWorker = Boolean(workerApiBase(c.mgtv));
   const message = hasWorker
-    ? `后台采集器正在建立时间序列，已记录 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
+    ? `后台采集器正在建立${dataset.emptyName}时间序列，已记录 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
     : `正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。`;
+  const datasetTabs = monitorDatasetTabs(c);
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20 text-center">
         <span class="inline-block rounded-full bg-white px-3 py-1 text-xs font-medium text-brand-600 shadow-sm">自动监控</span>
         <h2 class="mt-4 font-display text-3xl sm:text-4xl text-brand-600">数据监控</h2>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+          ${datasetTabs}
+        </div>
         <p class="mx-auto mt-3 max-w-2xl text-gray-500">
           ${esc(message)}
         </p>
@@ -1214,6 +1282,7 @@ function renderMonitorEmpty(c, history) {
 async function renderMonitor() {
   const c = SITE.campaign;
   if (!c || !c.mgtv) return;
+  const dataset = monitorDatasetConfig();
   const history = await loadMonitorHistoryForDisplay(c);
   if (history.length < 1) {
     renderMonitorEmpty(c, history);
@@ -1221,13 +1290,13 @@ async function renderMonitor() {
   }
 
   const periods = monitorPeriodIds(history);
-  const preferred = Number(monitorSelectedPeriodId || latestPeriodId(history) || (periods[0] && periods[0].periodId));
+  const preferred = Number(monitorSelectedPeriodIds[dataset.key] || latestPeriodId(history) || (periods[0] && periods[0].periodId));
   const selected = periods.find(p => Number(p.periodId) === preferred) || periods[0];
   if (!selected) {
     renderMonitorEmpty(c, history);
     return;
   }
-  monitorSelectedPeriodId = Number(selected.periodId);
+  monitorSelectedPeriodIds[dataset.key] = Number(selected.periodId);
 
   const periodHistory = history.filter(snapshot => snapshotRowsByPeriod(snapshot, selected.periodId).length);
   const metrics = monitorMetrics(history, selected.periodId);
@@ -1239,6 +1308,7 @@ async function renderMonitor() {
   const latest = periodHistory[periodHistory.length - 1];
   const first = periodHistory[0];
   const updated = latest ? formatBeijingClock(latest.ts) : "--";
+  const datasetTabs = monitorDatasetTabs(c);
 
   const periodTabs = periods.map(p => {
     const active = Number(p.periodId) === Number(selected.periodId);
@@ -1270,7 +1340,7 @@ async function renderMonitor() {
     { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
     { label: "当前时间窗", value: monitorWindowMode === "today" ? "当天" : formatMonitorDuration(windowInfo.spanMs), note: formatMonitorRange(windowInfo.startTs, windowInfo.endTs) },
     { label: "窗口新增", value: fmtInt(summary.total), note: summary.top && summary.top.value ? `最高：${summary.top.row.title}` : "暂无新增" },
-    { label: "合并粒度", value: formatMonitorDuration(windowInfo.bucketMs), note: `${buckets.length} 个时间点 · ${summary.activeCount} 个作品有新增` },
+    { label: "合并粒度", value: formatMonitorDuration(windowInfo.bucketMs), note: `${buckets.length} 个时间点 · ${summary.activeCount} 个${dataset.valueLabel}有新增` },
   ].map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
       <p class="text-sm text-gray-500">${esc(item.label)}</p>
@@ -1287,6 +1357,10 @@ async function renderMonitor() {
           <span>采样越多，判断越稳</span>
         </div>
         <h2 class="font-display text-3xl sm:text-4xl text-brand-600 text-center">数据监控</h2>
+
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+          ${datasetTabs}
+        </div>
 
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
           ${periodTabs}
@@ -1305,7 +1379,7 @@ async function renderMonitor() {
         <div class="mt-8">
           <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
             <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h3 class="font-medium text-gray-800">${esc(selected.label)}增量走势</h3>
+              <h3 class="font-medium text-gray-800">${esc(dataset.key === "hot" ? dataset.title : `${selected.label}增量走势`)}</h3>
               <p class="text-xs text-gray-400">鼠标滚轮切换时间 · 当前按 ${esc(formatMonitorDuration(windowInfo.bucketMs))} 合并</p>
             </div>
             <div class="relative w-full min-w-0" data-monitor-chart-wheel style="height:420px;">
@@ -1321,9 +1395,18 @@ async function renderMonitor() {
   alignMonitorHash();
 }
 function attachMonitorHandlers(c, history) {
+  document.querySelectorAll("[data-monitor-kind]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const next = btn.dataset.monitorKind || "stage";
+      if (next === monitorDataKind) return;
+      monitorDataKind = next;
+      monitorViewAnchorTs = null;
+      renderMonitor();
+    });
+  });
   document.querySelectorAll("[data-monitor-period-id]").forEach(btn => {
     btn.addEventListener("click", () => {
-      monitorSelectedPeriodId = Number(btn.dataset.monitorPeriodId);
+      monitorSelectedPeriodIds[monitorDataKind] = Number(btn.dataset.monitorPeriodId);
       renderMonitor();
     });
   });
@@ -1350,6 +1433,7 @@ function attachMonitorHandlers(c, history) {
 function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visibleRows) {
   if (monitorRateChart) monitorRateChart.destroy();
   if (!window.Chart) return;
+  const dataset = monitorDatasetConfig();
 
   const labels = buckets.length
     ? buckets.map(bucket => bucketLabel(bucket.ts, windowInfo.spanMs))
@@ -1384,7 +1468,7 @@ function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visi
         y: {
           beginAtZero: true,
           grid: { color: "#fde8e8" },
-          title: { display: true, text: "新增助力数" },
+          title: { display: true, text: dataset.yAxisLabel },
           ticks: { callback: value => fmtInt(value) },
         },
         x: {

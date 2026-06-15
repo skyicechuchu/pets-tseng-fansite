@@ -1,10 +1,15 @@
 const DEFAULTS = {
   apiBase: "https://hb-mangott.api.mgtv.com",
+  hotVoteApi: "https://vote.api.mgtv.com/chengfeng/query_vote_list",
+  hotVoteSource: "share_cf_zj_2026_cz",
   appId: 1,
   platform: "iphone",
   targetName: "曾沛慈",
   retentionDays: 14,
 };
+
+const HOT_VOTE_PERIOD_ID = 202606;
+const HOT_VOTE_PERIOD_LABEL = "姐姐夯值";
 
 export default {
   async fetch(request, env, ctx) {
@@ -29,7 +34,7 @@ async function handleRequest(request, env) {
       return json({
         ok: true,
         service: "pets-mgtv-monitor",
-        endpoints: ["/health", "/latest", "/history?limit=720"],
+        endpoints: ["/health", "/latest", "/history?limit=720", "/hot/latest", "/hot/history?limit=720"],
       }, cors);
     }
 
@@ -45,6 +50,16 @@ async function handleRequest(request, env) {
       const limit = clampInt(url.searchParams.get("limit"), 2, 1440, 720);
       const periodId = url.searchParams.get("periodId");
       return json(await history(env, limit, periodId), cors);
+    }
+
+    if (request.method === "GET" && url.pathname === "/hot/latest") {
+      return json(await hotLatest(env), cors);
+    }
+
+    if (request.method === "GET" && url.pathname === "/hot/history") {
+      const limit = clampInt(url.searchParams.get("limit"), 2, 1440, 720);
+      const periodId = url.searchParams.get("periodId");
+      return json(await hotHistory(env, limit, periodId), cors);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/collect") {
@@ -63,6 +78,8 @@ async function handleRequest(request, env) {
 function config(env) {
   return {
     apiBase: env.MGTV_API_BASE || DEFAULTS.apiBase,
+    hotVoteApi: env.MGTV_HOT_VOTE_API || DEFAULTS.hotVoteApi,
+    hotVoteSource: env.MGTV_HOT_VOTE_SOURCE || DEFAULTS.hotVoteSource,
     appId: Number(env.MGTV_APP_ID || DEFAULTS.appId),
     platform: env.MGTV_PLATFORM || DEFAULTS.platform,
     targetName: env.MGTV_TARGET_NAME || DEFAULTS.targetName,
@@ -143,6 +160,62 @@ async function fetchMgtv(path, params, cfg) {
   return data.data || {};
 }
 
+function hotVoteUrl(cfg) {
+  const now = Date.now();
+  const query = new URLSearchParams({
+    request_time: String(now),
+    os: "h5",
+    did: "000-000-000",
+    source: cfg.hotVoteSource,
+    invoker: "mobile-zhifubao",
+    appVersion: "6.9.9_vipact",
+    mac: "000-000-000",
+    version: "6.9.9_vipact",
+    t: String(now),
+  });
+  return `${cfg.hotVoteApi}?${query.toString()}`;
+}
+
+async function fetchHotVote(cfg) {
+  const res = await fetch(hotVoteUrl(cfg), {
+    headers: {
+      "Accept": "application/json, text/plain, */*",
+      "Origin": "https://lego.mgtv.com",
+      "Referer": "https://lego.mgtv.com/tpl/event_voter/page/cf_zj_2026.html",
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+    },
+  });
+  if (!res.ok) throw new Error(`MGTV hot vote HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.errno !== 0) throw new Error(data.errmsg || `MGTV hot vote API ${data.errno}`);
+  return data.data || {};
+}
+
+function optionValue(item, optionName) {
+  const option = (item.option_name || []).find(row => row.option_name === optionName);
+  return Number(option && option.option_vote_number || 0);
+}
+
+function normalizeHotVoteRow(item, targetName) {
+  const hotValue = optionValue(item, "夯爆了");
+  const awkwardValue = optionValue(item, "尬场了");
+  return {
+    rank: 0,
+    title: item.vote_name || "",
+    guest: item.song_name || "",
+    interactionValue: hotValue,
+    roundAmount: awkwardValue,
+    onScreenCount: hotValue + awkwardValue,
+    cid: "",
+    coverId: String(item.vote_id || ""),
+    coverUrl: item.vote_img || "",
+    isTarget: String(item.vote_name || "").includes(targetName),
+    hotValue,
+    awkwardValue,
+    status: hotValue >= awkwardValue ? "夯爆了" : "尬场了",
+  };
+}
+
 function normalizeRow(item, targetName) {
   const cover = (item.covers && item.covers[0]) || {};
   const title = cover.coverTitle || item.coverTitle || "";
@@ -161,9 +234,8 @@ function normalizeRow(item, targetName) {
   };
 }
 
-async function loadMgtvState(env) {
+async function loadMgtvState(env, capturedAt) {
   const cfg = config(env);
-  const capturedAt = minuteBucket();
   const configData = await fetchMgtv("/online/live/campaign/config", mgtvParams({}, cfg), cfg);
   const current = configData.weeklyPeriod || {};
   const stageTags = configData.stageTags || [];
@@ -185,8 +257,81 @@ async function loadMgtvState(env) {
   };
 }
 
+async function loadHotVoteState(env, capturedAt) {
+  const cfg = config(env);
+  const data = await fetchHotVote(cfg);
+  const rows = (data.vote_list || [])
+    .map(row => normalizeHotVoteRow(row, cfg.targetName))
+    .sort((a, b) => b.interactionValue - a.interactionValue || a.title.localeCompare(b.title, "zh-CN"));
+  rows.forEach((row, index) => { row.rank = index + 1; });
+
+  return {
+    updatedAt: capturedAt,
+    currentPeriodId: Number(data.phase_id || HOT_VOTE_PERIOD_ID),
+    voteState: data.vote_state || "",
+    phaseId: Number(data.phase_id || 0),
+    systemTime: data.system_time || "",
+    beginTime: data.begin_time || "",
+    endTime: data.end_time || "",
+    queenList: data.queen_list || [],
+    periods: [{
+      periodId: Number(data.phase_id || HOT_VOTE_PERIOD_ID),
+      periodLabel: HOT_VOTE_PERIOD_LABEL,
+      targetValueInt: 0,
+      rows,
+    }],
+  };
+}
+
+async function loadSnapshotBundle(env) {
+  const capturedAt = minuteBucket();
+  const [campaign, hotVote] = await Promise.allSettled([
+    loadMgtvState(env, capturedAt),
+    loadHotVoteState(env, capturedAt),
+  ]);
+  if (campaign.status === "rejected" && hotVote.status === "rejected") {
+    throw new Error(`all_sources_failed: ${campaign.reason.message}; ${hotVote.reason.message}`);
+  }
+  const state = {
+    updatedAt: capturedAt,
+    campaign: campaign.status === "fulfilled" ? campaign.value : null,
+    hotVote: hotVote.status === "fulfilled" ? hotVote.value : null,
+    errors: {
+      campaign: campaign.status === "rejected" ? campaign.reason.message : null,
+      hotVote: hotVote.status === "rejected" ? hotVote.reason.message : null,
+    },
+  };
+  if (state.campaign) {
+    state.currentPeriodId = state.campaign.currentPeriodId;
+    state.periods = state.campaign.periods;
+  }
+  return state;
+}
+
+function parseStoredState(rawJson) {
+  const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+  if (parsed && (parsed.campaign || parsed.hotVote)) return parsed;
+  return {
+    updatedAt: parsed && parsed.updatedAt,
+    currentPeriodId: parsed && parsed.currentPeriodId,
+    periods: parsed && parsed.periods,
+    campaign: parsed || null,
+    hotVote: parsed && parsed.hotVote || null,
+    errors: {},
+  };
+}
+
+function campaignState(stored) {
+  return stored && (stored.campaign || (stored.periods ? stored : null));
+}
+
+function hotVoteState(stored) {
+  return stored && stored.hotVote || null;
+}
+
 async function collectAndStore(env) {
-  const state = await loadMgtvState(env);
+  const state = await loadSnapshotBundle(env);
+  const campaign = campaignState(state);
   const capturedAt = state.updatedAt;
   const capturedMs = Date.parse(capturedAt);
   const db = env.DB;
@@ -195,17 +340,17 @@ async function collectAndStore(env) {
   if (row) {
     await db.prepare(
       "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
-    ).bind(capturedMs, state.currentPeriodId, JSON.stringify(state), row.id).run();
+    ).bind(capturedMs, campaign ? campaign.currentPeriodId : null, JSON.stringify(state), row.id).run();
     await db.prepare("DELETE FROM snapshot_rows WHERE snapshot_id = ?").bind(row.id).run();
   } else {
     await db.prepare(
       "INSERT INTO snapshots (captured_at, captured_ms, current_period_id, raw_json) VALUES (?, ?, ?, ?)"
-    ).bind(capturedAt, capturedMs, state.currentPeriodId, JSON.stringify(state)).run();
+    ).bind(capturedAt, capturedMs, campaign ? campaign.currentPeriodId : null, JSON.stringify(state)).run();
     row = await db.prepare("SELECT id FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
   }
 
   const statements = [];
-  for (const period of state.periods || []) {
+  for (const period of campaign && campaign.periods || []) {
     for (const item of period.rows || []) {
       statements.push(db.prepare(
         `INSERT INTO snapshot_rows
@@ -232,8 +377,10 @@ async function collectAndStore(env) {
 
   return {
     capturedAt,
-    currentPeriodId: state.currentPeriodId,
-    periodCount: state.periods.length,
+    currentPeriodId: campaign ? campaign.currentPeriodId : null,
+    periodCount: campaign ? campaign.periods.length : 0,
+    hotVoteCount: state.hotVote && state.hotVote.periods[0] ? state.hotVote.periods[0].rows.length : 0,
+    errors: state.errors,
     rowCount: statements.length,
   };
 }
@@ -249,14 +396,11 @@ async function pruneOldSnapshots(env) {
 }
 
 async function latest(env) {
-  const row = await env.DB.prepare(
-    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT 1"
-  ).first();
-  if (!row) throw httpError("no_snapshot_yet", 404);
+  const row = await latestRowWithState(env, campaignState);
   return {
     ok: true,
     source: "worker",
-    state: JSON.parse(row.raw_json),
+    state: campaignState(parseStoredState(row.raw_json)),
     meta: {
       latestSnapshotId: row.id,
       capturedAt: row.captured_at,
@@ -270,7 +414,11 @@ async function history(env, limit, periodId) {
   const rows = await env.DB.prepare(
     "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT ?"
   ).bind(limit).all();
-  const snapshots = (rows.results || []).reverse().map(row => stateToMonitorSnapshot(JSON.parse(row.raw_json), periodId));
+  const snapshots = (rows.results || [])
+    .reverse()
+    .map(row => campaignState(parseStoredState(row.raw_json)))
+    .filter(Boolean)
+    .map(state => stateToMonitorSnapshot(state, periodId));
   return {
     ok: true,
     source: "worker",
@@ -283,16 +431,74 @@ async function history(env, limit, periodId) {
   };
 }
 
+async function hotLatest(env) {
+  const row = await latestRowWithState(env, hotVoteState);
+  return {
+    ok: true,
+    source: "worker",
+    state: hotVoteState(parseStoredState(row.raw_json)),
+    meta: {
+      latestSnapshotId: row.id,
+      capturedAt: row.captured_at,
+      capturedMs: row.captured_ms,
+      currentPeriodId: row.current_period_id,
+    },
+  };
+}
+
+async function hotHistory(env, limit, periodId) {
+  const rows = await env.DB.prepare(
+    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT ?"
+  ).bind(limit).all();
+  const snapshots = (rows.results || [])
+    .reverse()
+    .map(row => hotVoteState(parseStoredState(row.raw_json)))
+    .filter(Boolean)
+    .map(state => stateToMonitorSnapshot(state, periodId));
+  return {
+    ok: true,
+    source: "worker",
+    snapshots,
+    meta: {
+      count: snapshots.length,
+      limit,
+      periodId: periodId ? Number(periodId) : null,
+    },
+  };
+}
+
+async function latestRowWithState(env, pick) {
+  const rows = await env.DB.prepare(
+    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT 50"
+  ).all();
+  const row = (rows.results || []).find(item => pick(parseStoredState(item.raw_json)));
+  if (!row) throw httpError("no_snapshot_yet", 404);
+  return row;
+}
+
 async function health(env) {
   const latestRow = await env.DB.prepare(
     "SELECT captured_at, captured_ms, current_period_id FROM snapshots ORDER BY captured_ms DESC LIMIT 1"
   ).first();
   const countRow = await env.DB.prepare("SELECT COUNT(*) AS count FROM snapshots").first();
+  let latestHot = null;
+  if (latestRow) {
+    try {
+      const row = await latestRowWithState(env, hotVoteState);
+      latestHot = {
+        captured_at: row.captured_at,
+        captured_ms: row.captured_ms,
+      };
+    } catch (err) {
+      latestHot = null;
+    }
+  }
   return {
     ok: true,
     source: "worker",
     snapshots: Number(countRow && countRow.count || 0),
     latest: latestRow || null,
+    hotVote: latestHot,
   };
 }
 
@@ -312,6 +518,10 @@ function stateToMonitorSnapshot(state, periodId) {
         roundAmount: row.roundAmount,
         onScreenCount: row.onScreenCount,
         isTarget: row.isTarget,
+        hotValue: row.hotValue,
+        awkwardValue: row.awkwardValue,
+        status: row.status,
+        coverUrl: row.coverUrl,
       });
     });
   });
