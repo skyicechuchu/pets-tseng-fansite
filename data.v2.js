@@ -143,7 +143,7 @@ const SITE = {
   // ---- 应援打投数据看板 ----
   campaign: {
     title: "乘风2026 芒推推助力统计",
-    subtitle: "四个公演舞台的助力值、上屏次数与本轮进度",
+    subtitle: "姐姐夯值投送、舞台助力值、上屏次数与本轮进度",
     isDemo: false,
     mgtv: {
       appId: 1,

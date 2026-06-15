@@ -346,12 +346,14 @@ function renderSchedule() {
 }
 let dashboardRankChart = null;
 let dashboardStageChart = null;
+let dashboardHotVoteChart = null;
 let dashboardRefreshTimer = null;
 let dashboardState = null;
+let dashboardHotState = null;
 let dashboardSelectedPeriodId = null;
 let dashboardHashAligned = false;
 let monitorRateChart = null;
-let monitorDataKind = "stage";
+let monitorDataKind = "hot";
 const monitorSelectedPeriodIds = {};
 let monitorHashAligned = false;
 let monitorHistorySource = "local";
@@ -369,7 +371,6 @@ const MONITOR_DATASETS = {
     title: "舞台助力增量走势",
     emptyName: "舞台助力",
     historyPath: "/history",
-    latestPath: "/latest",
     valueLabel: "作品",
     yAxisLabel: "新增助力数",
     sourceLabel: "芒推推页面",
@@ -381,7 +382,6 @@ const MONITOR_DATASETS = {
     title: "姐姐夯值投送增量走势",
     emptyName: "姐姐夯值",
     historyPath: "/hot/history",
-    latestPath: "/hot/latest",
     valueLabel: "姐姐",
     yAxisLabel: "新增夯爆了",
     sourceLabel: "姐姐夯值页",
@@ -390,7 +390,7 @@ const MONITOR_DATASETS = {
 };
 
 function monitorDatasetConfig() {
-  return MONITOR_DATASETS[monitorDataKind] || MONITOR_DATASETS.stage;
+  return MONITOR_DATASETS[monitorDataKind] || MONITOR_DATASETS.hot;
 }
 
 function fmtInt(n) {
@@ -536,6 +536,10 @@ async function loadWorkerMgtvDashboardData(campaign) {
   const json = await fetchWorkerJson("/latest", {}, campaign.mgtv);
   return hydrateMgtvState(json.state || {}, "worker", json.meta);
 }
+async function loadWorkerHotVoteDashboardData(campaign) {
+  const json = await fetchWorkerJson("/hot/latest", {}, campaign.mgtv);
+  return hydrateMgtvState(json.state || {}, "worker", json.meta);
+}
 async function loadMgtvDashboardData(campaign) {
   if (workerApiBase(campaign.mgtv)) {
     try {
@@ -546,8 +550,23 @@ async function loadMgtvDashboardData(campaign) {
   }
   return loadLiveMgtvDashboardData(campaign);
 }
+async function loadHotVoteDashboardData(campaign) {
+  if (!workerApiBase(campaign.mgtv)) return null;
+  try {
+    return await loadWorkerHotVoteDashboardData(campaign);
+  } catch (err) {
+    console.warn("姐姐夯值数据暂时不可用", err);
+    return null;
+  }
+}
 function sumRows(rows, key) {
   return rows.reduce((total, row) => total + Number(row[key] || 0), 0);
+}
+function rowValue(row) {
+  return Number(row && row.interactionValue || 0);
+}
+function rowSecondaryValue(row) {
+  return Number(row && row.roundAmount || 0);
 }
 function renderDashboardLoading(c) {
   $("dashboard").innerHTML = `
@@ -582,7 +601,90 @@ function renderDashboardError(c, err) {
   const btn = document.querySelector("[data-mgtv-refresh]");
   if (btn) btn.addEventListener("click", () => loadAndRenderMgtvDashboard(c));
 }
-function renderMgtvDashboard(c, state, selectedPeriodId, staleError) {
+function renderHotVoteDashboardSection(c, hotState) {
+  const mgtv = c.mgtv || {};
+  const period = hotState && hotState.periods && hotState.periods[0];
+  if (!period || !(period.rows || []).length) return "";
+
+  const rows = (period.rows || []).slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+  const target = rows.find(row => row.isTarget) || rows.find(row => String(row.title || "").includes(mgtv.targetName || "曾沛慈")) || rows[0] || {};
+  const targetId = target.coverId || target.title || "";
+  const second = rows.find(row => (row.coverId || row.title || "") !== targetId) || {};
+  const hotTotal = sumRows(rows, "interactionValue");
+  const awkwardTotal = sumRows(rows, "roundAmount");
+  const lead = Math.max(rowValue(target) - rowValue(second), 0);
+  const share = fmtPct(rowValue(target), hotTotal);
+  const updated = formatBeijingClock(hotState.updatedAt);
+  const sourceLink = mgtv.hotVoteSourceUrl
+    ? `<a href="${esc(mgtv.hotVoteSourceUrl)}" target="_blank" rel="noopener noreferrer"
+          class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">姐姐夯值页 ${ICON.external}</a>`
+    : "";
+
+  const stats = [
+    { label: "沛慈夯爆了", value: fmtInt(rowValue(target)), note: `占全榜 ${share}%` },
+    { label: "姐姐夯值排名", value: target.rank ? `#${target.rank}` : "--", note: target.guest || "暂无曲目" },
+    { label: "领先第二名", value: fmtInt(lead), note: second.title ? `第二名：${second.title}` : "暂无对比" },
+    { label: "沛慈尬场了", value: fmtInt(rowSecondaryValue(target)), note: `全榜尬场了 ${fmtInt(awkwardTotal)}` },
+  ].map(item => `
+    <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+      <p class="text-sm text-gray-500">${esc(item.label)}</p>
+      <p class="mt-1 font-display text-3xl text-brand-600">${esc(item.value)}</p>
+      <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
+    </div>`).join("");
+
+  const tableRows = rows.slice(0, 10).map(row => `
+    <tr class="${row.isTarget ? "bg-brand-50/80 text-brand-800" : ""}">
+      <td class="whitespace-nowrap px-3 py-2 font-bold">#${row.rank}</td>
+      <td class="px-3 py-2 font-medium">${esc(row.title)}</td>
+      <td class="px-3 py-2 text-gray-500">${esc(row.guest || "")}</td>
+      <td class="px-3 py-2 text-right">${fmtInt(rowValue(row))}</td>
+      <td class="px-3 py-2 text-right">${fmtInt(rowSecondaryValue(row))}</td>
+      <td class="px-3 py-2 text-right">${esc(row.status || (rowValue(row) >= rowSecondaryValue(row) ? "夯爆了" : "尬场了"))}</td>
+    </tr>`).join("");
+
+  return `
+    <section class="mb-10">
+      <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 class="font-display text-2xl text-brand-600">姐姐夯值统计</h3>
+          <p class="mt-1 text-sm text-gray-500">最近采样 ${esc(updated)} 北京时间 · ${fmtInt(rows.length)} 位姐姐</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">
+          ${sourceLink}
+        </div>
+      </div>
+      <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
+      <div class="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+        <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+          <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h4 class="font-medium text-gray-800">姐姐夯爆了 Top 10</h4>
+            <p class="text-xs text-gray-400">红色为${esc(mgtv.targetName || "曾沛慈")}</p>
+          </div>
+          <div class="relative w-full min-w-0" style="height:360px;">
+            <canvas id="hotVoteChart"></canvas>
+          </div>
+        </div>
+        <div class="min-w-0 overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-brand-50 text-xs text-brand-700">
+                <tr>
+                  <th class="px-3 py-2 text-left">排名</th>
+                  <th class="px-3 py-2 text-left">姐姐</th>
+                  <th class="px-3 py-2 text-left">曲目</th>
+                  <th class="px-3 py-2 text-right">夯爆了</th>
+                  <th class="px-3 py-2 text-right">尬场了</th>
+                  <th class="px-3 py-2 text-right">状态</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
+function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState) {
   const mgtv = c.mgtv;
   const periods = state.periods || [];
   const selected = periods.find(p => Number(p.periodId) === Number(selectedPeriodId)) || periods[0];
@@ -609,6 +711,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError) {
   const staleText = staleError
     ? `<span class="rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-700">保留上次数据</span>`
     : "";
+  const hotVoteSection = renderHotVoteDashboardSection(c, hotState);
 
   const stats = [
     { label: "沛慈相关累计助力", value: fmtInt(targetTotal), note: `${targetRows.length} 个舞台作品` },
@@ -685,51 +788,61 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError) {
           </button>
         </div>
 
-        <div class="mb-6 flex gap-3 overflow-x-auto pb-2">${tabs}</div>
-        <div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
-        <div class="mb-8">${progressBar}</div>
+        ${hotVoteSection}
 
-        <div class="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
-          <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
-            <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h3 class="font-medium text-gray-800">${esc(selected.periodLabel)}助力榜</h3>
-              <p class="text-xs text-gray-400">红色为${esc(mgtv.targetName || "曾沛慈")}相关作品</p>
-            </div>
-            <div class="relative w-full min-w-0" style="height:${chartHeight}px;">
-              <canvas id="rankChart"></canvas>
+        <section>
+          <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 class="font-display text-2xl text-brand-600">公演舞台统计</h3>
+              <p class="mt-1 text-sm text-gray-500">四个公演舞台的助力值、上屏次数与本轮进度</p>
             </div>
           </div>
-          <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
-            <h3 class="mb-3 font-medium text-gray-800">沛慈相关作品助力对比</h3>
-            <div class="relative w-full min-w-0" style="height:300px;">
-              <canvas id="stageChart"></canvas>
-            </div>
-          </div>
-        </div>
+          <div class="mb-6 flex gap-3 overflow-x-auto pb-2">${tabs}</div>
+          <div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
+          <div class="mb-8">${progressBar}</div>
 
-        <div class="mt-6 overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-brand-50 text-xs text-brand-700">
-                <tr>
-                  <th class="px-3 py-2 text-left">排名</th>
-                  <th class="px-3 py-2 text-left">作品</th>
-                  <th class="px-3 py-2 text-right">累计助力</th>
-                  <th class="px-3 py-2 text-right">本轮助力</th>
-                  <th class="px-3 py-2 text-right">距目标</th>
-                  <th class="px-3 py-2 text-right">上屏</th>
-                  <th class="px-3 py-2 text-left">阵容</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
-            </table>
+          <div class="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+            <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+              <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                <h3 class="font-medium text-gray-800">${esc(selected.periodLabel)}助力榜</h3>
+                <p class="text-xs text-gray-400">红色为${esc(mgtv.targetName || "曾沛慈")}相关作品</p>
+              </div>
+              <div class="relative w-full min-w-0" style="height:${chartHeight}px;">
+                <canvas id="rankChart"></canvas>
+              </div>
+            </div>
+            <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+              <h3 class="mb-3 font-medium text-gray-800">沛慈相关作品助力对比</h3>
+              <div class="relative w-full min-w-0" style="height:300px;">
+                <canvas id="stageChart"></canvas>
+              </div>
+            </div>
           </div>
-        </div>
+
+          <div class="mt-6 overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-brand-50 text-xs text-brand-700">
+                  <tr>
+                    <th class="px-3 py-2 text-left">排名</th>
+                    <th class="px-3 py-2 text-left">作品</th>
+                    <th class="px-3 py-2 text-right">累计助力</th>
+                    <th class="px-3 py-2 text-right">本轮助力</th>
+                    <th class="px-3 py-2 text-right">距目标</th>
+                    <th class="px-3 py-2 text-right">上屏</th>
+                    <th class="px-3 py-2 text-left">阵容</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </div>
     </div>`;
 
   attachMgtvDashboardHandlers(c, state);
-  drawMgtvCharts(state, selected);
+  drawMgtvCharts(state, selected, hotState);
   alignDashboardHash();
 }
 function alignDashboardHash() {
@@ -742,12 +855,13 @@ function alignDashboardHash() {
 }
 function attachMgtvDashboardHandlers(c, state) {
   document.querySelectorAll("[data-period-id]").forEach(btn => {
-    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId)));
+    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState));
   });
   const refresh = document.querySelector("[data-mgtv-refresh]");
   if (refresh) refresh.addEventListener("click", () => loadAndRenderMgtvDashboard(c, dashboardSelectedPeriodId));
 }
-function drawMgtvCharts(state, selected) {
+function drawMgtvCharts(state, selected, hotState) {
+  if (dashboardHotVoteChart) dashboardHotVoteChart.destroy();
   if (dashboardRankChart) dashboardRankChart.destroy();
   if (dashboardStageChart) dashboardStageChart.destroy();
   if (!window.Chart) return;
@@ -758,6 +872,38 @@ function drawMgtvCharts(state, selected) {
     animation: noAnim ? false : undefined,
     plugins: { legend: { display: false } },
   };
+  const hotPeriod = hotState && hotState.periods && hotState.periods[0];
+  const hotCanvas = $("hotVoteChart");
+  if (hotCanvas && hotPeriod) {
+    const hotRows = (hotPeriod.rows || [])
+      .slice()
+      .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
+      .slice(0, 10);
+    dashboardHotVoteChart = new Chart(hotCanvas, {
+      type: "bar",
+      data: {
+        labels: hotRows.map(row => row.title),
+        datasets: [{
+          data: hotRows.map(row => rowValue(row)),
+          backgroundColor: hotRows.map(row => row.isTarget ? "#dc2626" : "#fecaca"),
+          borderRadius: 6,
+        }],
+      },
+      options: Object.assign({}, baseOpts, {
+        indexAxis: "y",
+        scales: {
+          x: {
+            beginAtZero: true,
+            grid: { color: "#fde8e8" },
+            title: { display: true, text: "夯爆了投送值" },
+            ticks: { callback: value => fmtInt(value) },
+          },
+          y: { grid: { display: false } },
+        },
+      }),
+    });
+  }
+
   const rows = selected.rows || [];
   dashboardRankChart = new Chart($("rankChart"), {
     type: "bar",
@@ -811,15 +957,19 @@ function scheduleMgtvRefresh(c) {
 async function loadAndRenderMgtvDashboard(c, preferredPeriodId, silent) {
   if (!silent) renderDashboardLoading(c);
   try {
-    const state = await loadMgtvDashboardData(c);
+    const [state, hotState] = await Promise.all([
+      loadMgtvDashboardData(c),
+      loadHotVoteDashboardData(c),
+    ]);
     dashboardState = state;
+    dashboardHotState = hotState || dashboardHotState;
     recordMgtvMonitorSnapshot(state);
     const selected = preferredPeriodId || state.currentPeriodId || (state.periods[0] && state.periods[0].periodId);
-    renderMgtvDashboard(c, state, selected);
+    renderMgtvDashboard(c, state, selected, null, dashboardHotState);
     scheduleMgtvRefresh(c);
   } catch (err) {
     if (dashboardState && silent) {
-      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err);
+      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState);
     } else {
       renderDashboardError(c, err);
     }
@@ -1310,7 +1460,7 @@ async function renderMonitor() {
   const updated = latest ? formatBeijingClock(latest.ts) : "--";
   const datasetTabs = monitorDatasetTabs(c);
 
-  const periodTabs = periods.map(p => {
+  const periodTabs = periods.length > 1 ? periods.map(p => {
     const active = Number(p.periodId) === Number(selected.periodId);
     return `
       <button type="button" data-monitor-period-id="${p.periodId}"
@@ -1318,7 +1468,7 @@ async function renderMonitor() {
           ${active ? "border-brand-500 bg-brand-500 text-white" : "border-brand-100 bg-white text-gray-600 hover:border-brand-300 hover:text-brand-700"}">
         ${esc(p.label)}
       </button>`;
-  }).join("");
+  }).join("") : "";
 
   const windowModes = [
     { label: "今日", mode: "today" },
@@ -1362,9 +1512,7 @@ async function renderMonitor() {
           ${datasetTabs}
         </div>
 
-        <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-          ${periodTabs}
-        </div>
+        ${periodTabs ? `<div class="mt-8 flex flex-wrap items-center justify-center gap-3">${periodTabs}</div>` : ""}
 
         <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
           ${windowModes}
@@ -1397,7 +1545,7 @@ async function renderMonitor() {
 function attachMonitorHandlers(c, history) {
   document.querySelectorAll("[data-monitor-kind]").forEach(btn => {
     btn.addEventListener("click", () => {
-      const next = btn.dataset.monitorKind || "stage";
+      const next = btn.dataset.monitorKind || "hot";
       if (next === monitorDataKind) return;
       monitorDataKind = next;
       monitorViewAnchorTs = null;
