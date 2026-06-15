@@ -357,6 +357,7 @@ let monitorDataKind = "hot";
 const monitorSelectedPeriodIds = {};
 let monitorHashAligned = false;
 let monitorHistorySource = "local";
+let monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
 let monitorWindowMode = "today";
 let monitorViewAnchorTs = null;
 let mgtvForegroundRefreshBound = false;
@@ -1020,14 +1021,22 @@ function hydrateMonitorSnapshot(snapshot) {
 }
 async function loadMonitorHistoryForDisplay(c) {
   const dataset = monitorDatasetConfig();
+  monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
   if (workerApiBase(c.mgtv)) {
     try {
       const json = await fetchWorkerJson(dataset.historyPath, { limit: MONITOR_WORKER_HISTORY_LIMIT }, c.mgtv);
       const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
       monitorHistorySource = "worker";
+      monitorHistoryStatus = { ok: true, source: "worker", count: snapshots.length, error: "" };
       return snapshots;
     } catch (e) {
       console.warn("Worker 历史暂时不可用，改用浏览器本地历史", e);
+      monitorHistoryStatus = {
+        ok: false,
+        source: "worker",
+        count: 0,
+        error: e && e.message ? e.message : String(e),
+      };
     }
   }
   if (dataset.key !== "stage") {
@@ -1035,7 +1044,11 @@ async function loadMonitorHistoryForDisplay(c) {
     return [];
   }
   monitorHistorySource = "local";
-  return loadMonitorHistory();
+  const localHistory = loadMonitorHistory();
+  if (monitorHistoryStatus.ok !== false) {
+    monitorHistoryStatus = { ok: true, source: "local", count: localHistory.length, error: "" };
+  }
+  return localHistory;
 }
 function snapshotFromMgtvState(state) {
   const rows = [];
@@ -1402,9 +1415,11 @@ function renderMonitorEmpty(c, history) {
   const dataset = monitorDatasetConfig();
   const samples = history.length;
   const hasWorker = Boolean(workerApiBase(c.mgtv));
-  const message = hasWorker
-    ? `后台采集器正在建立${dataset.emptyName}时间序列，已记录 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
-    : `正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。`;
+  const message = hasWorker && monitorHistoryStatus.ok === false
+    ? "暂时没有连上后台时间序列。这通常是网络、Worker 冷启动、浏览器缓存或页面刚更新时的一次性请求失败；后台数据还在，刷新后会重新拉取。"
+    : hasWorker
+      ? `后台采集器正在建立${dataset.emptyName}时间序列，已返回 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
+      : `正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。`;
   const datasetTabs = monitorDatasetTabs(c);
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
