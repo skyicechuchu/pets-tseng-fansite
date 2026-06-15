@@ -1266,10 +1266,7 @@ async function renderMonitor() {
           <span>最近采样 ${esc(updated)}</span>
           <span>采样越多，判断越稳</span>
         </div>
-        <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-2 text-center">数据监控</h2>
-        <p class="mx-auto max-w-2xl text-center text-gray-500">
-          用每次采样的增量、速度、占比和历史中位数对比观察异常波动，只提示可疑信号，不直接判定作假。
-        </p>
+        <h2 class="font-display text-3xl sm:text-4xl text-brand-600 text-center">数据监控</h2>
 
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
           ${periodTabs}
