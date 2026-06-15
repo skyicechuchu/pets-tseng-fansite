@@ -1070,6 +1070,33 @@ async function renderMonitor() {
       <td class="min-w-[12rem] px-3 py-2 text-gray-500">${esc(row.signals)}</td>
     </tr>`).join("");
 
+  const metricGuide = [
+    {
+      label: "最近新增",
+      text: "最近两次采样之间增加的助力数。这个数字突然变大，说明这一分钟或这一段时间内有集中增长。",
+    },
+    {
+      label: "速度/分钟",
+      text: "把最近新增除以采样间隔，换算成每分钟增长速度。它适合比较不同采样间隔下的增长强度。",
+    },
+    {
+      label: "历史中位",
+      text: "同一作品过去每个采样区间新增数的中位数，比平均数更不容易被单次极端增长带偏。",
+    },
+    {
+      label: "Z 分",
+      text: "表示最近新增偏离历史正常波动的程度。数值越高越异常，通常超过 3 就值得重点观察。",
+    },
+    {
+      label: "占比",
+      text: "最近区间里某个作品新增数占全部作品新增数的比例。单个作品长期占比过高，需要结合速度和 Z 分一起看。",
+    },
+  ].map(item => `
+    <div class="rounded-xl border border-brand-100 bg-white p-4 shadow-sm">
+      <p class="font-bold text-brand-700">${esc(item.label)}</p>
+      <p class="mt-1 text-sm leading-relaxed text-gray-500">${esc(item.text)}</p>
+    </div>`).join("");
+
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20">
@@ -1126,6 +1153,15 @@ async function renderMonitor() {
               <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
             </table>
           </div>
+        </div>
+
+        <div class="mt-6">
+          <h3 class="mb-3 font-medium text-gray-800">如何理解这些数据</h3>
+          <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${metricGuide}</div>
+          <p class="mt-4 text-sm leading-relaxed text-gray-500">
+            建议重点看「最近新增 + 速度/分钟 + Z 分 + 占比」是否同时偏高。单个指标异常只能说明波动值得留意，
+            不能直接证明作假；连续多轮采样都出现突增、占比过高或加速度异常时，才更适合列入重点观察。
+          </p>
         </div>
       </div>
     </div>`;
