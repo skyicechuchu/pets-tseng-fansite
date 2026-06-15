@@ -152,7 +152,7 @@ const SITE = {
       mode: "sister",
       refreshMs: 60000,
       apiBase: "https://hb-mangott.api.mgtv.com",
-      workerApiBase: "",
+      workerApiBase: "https://pets-vote-monitor.zhuqiaochu1987.workers.dev",
       sourceUrl: "https://app.mgtv.com/h/tuitui/detail3?isHideNavBar=1&isFullScreen=1&mode=sister&cid=859271&code=5b68c720",
     },
   },

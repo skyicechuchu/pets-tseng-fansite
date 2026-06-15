@@ -17,5 +17,5 @@ CORS_ORIGIN = "*"
 [[d1_databases]]
 binding = "DB"
 database_name = "pets_vote_monitor"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "32d8e6bb-641c-4254-b642-e9b4b49a4834"
 migrations_dir = "workers/mgtv-monitor/migrations"
