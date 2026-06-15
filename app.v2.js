@@ -1134,6 +1134,18 @@ async function renderMonitor() {
           </div>
         </div>
 
+        <div class="mt-6 rounded-xl border border-brand-100 bg-brand-50/80 p-5 shadow-sm">
+          <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 class="font-medium text-gray-800">指标说明</h3>
+            <p class="text-xs text-gray-500">用于理解下方表格和增量走势，不直接判定作假</p>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${metricGuide}</div>
+          <p class="mt-4 text-sm leading-relaxed text-gray-500">
+            建议重点看「最近新增 + 速度/分钟 + Z 分 + 占比」是否同时偏高。单个指标异常只能说明波动值得留意，
+            不能直接证明作假；连续多轮采样都出现突增、占比过高或加速度异常时，才更适合列入重点观察。
+          </p>
+        </div>
+
         <div class="mt-6 overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
@@ -1153,15 +1165,6 @@ async function renderMonitor() {
               <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
             </table>
           </div>
-        </div>
-
-        <div class="mt-6">
-          <h3 class="mb-3 font-medium text-gray-800">如何理解这些数据</h3>
-          <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${metricGuide}</div>
-          <p class="mt-4 text-sm leading-relaxed text-gray-500">
-            建议重点看「最近新增 + 速度/分钟 + Z 分 + 占比」是否同时偏高。单个指标异常只能说明波动值得留意，
-            不能直接证明作假；连续多轮采样都出现突增、占比过高或加速度异常时，才更适合列入重点观察。
-          </p>
         </div>
       </div>
     </div>`;
