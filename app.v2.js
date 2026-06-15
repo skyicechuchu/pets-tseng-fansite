@@ -361,6 +361,7 @@ let dashboardHashAligned = false;
 let monitorRateChart = null;
 let monitorDataKind = "hot";
 const monitorSelectedPeriodIds = {};
+const monitorSelectedRowKeys = {};
 let monitorHashAligned = false;
 let monitorHistorySource = "local";
 let monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
@@ -374,6 +375,20 @@ let mgtvLastForegroundRefreshAt = 0;
 const MONITOR_STORAGE_KEY = "pets_mgtv_monitor_v1";
 const MONITOR_MAX_SNAPSHOTS = 720;
 const MONITOR_WORKER_HISTORY_LIMIT = 1440;
+const MONITOR_NON_TARGET_COLORS = [
+  "#2563eb",
+  "#16a34a",
+  "#7c3aed",
+  "#0891b2",
+  "#ca8a04",
+  "#4f46e5",
+  "#0f766e",
+  "#64748b",
+  "#84cc16",
+  "#06b6d4",
+  "#a855f7",
+  "#14b8a6",
+];
 const MONITOR_DATASETS = {
   stage: {
     key: "stage",
@@ -1405,6 +1420,21 @@ function monitorRowsForWindow(metrics, buckets) {
   metrics.filter(row => row.isTarget && !selected.some(item => item.key === row.key)).forEach(row => selected.push(row));
   return selected;
 }
+function monitorSelectionContext(datasetKey, periodId) {
+  return `${datasetKey}:${periodId}`;
+}
+function monitorSelectionKeys(context, metrics) {
+  const allKeys = metrics.map(row => row.key);
+  const saved = monitorSelectedRowKeys[context];
+  if (!saved) return new Set(allKeys);
+  const valid = saved.filter(key => allKeys.includes(key));
+  return new Set(valid.length ? valid : allKeys);
+}
+function monitorRowsForSelection(metrics, selectedKeys) {
+  return metrics
+    .filter(row => selectedKeys.has(row.key))
+    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+}
 function monitorWindowSummary(metrics, buckets) {
   const totals = metrics.map(row => ({
     row,
@@ -1445,6 +1475,52 @@ function monitorDatasetTabs(c) {
         ${link ? `<span class="pr-3">${link}</span>` : ""}
       </span>`;
   }).join("");
+}
+function monitorSeriesColor(row, index) {
+  return row.isTarget ? "#dc2626" : MONITOR_NON_TARGET_COLORS[index % MONITOR_NON_TARGET_COLORS.length];
+}
+function hexToRgba(hex, alpha) {
+  const clean = String(hex || "").replace("#", "");
+  if (clean.length !== 6) return `rgba(37,99,235,${alpha})`;
+  const n = Number.parseInt(clean, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+function renderMonitorNameSelector(metrics, selectedKeys, context) {
+  const rows = metrics.slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+  const allSelected = rows.every(row => selectedKeys.has(row.key));
+  const items = rows.map((row, index) => {
+    const selected = selectedKeys.has(row.key);
+    const color = monitorSeriesColor(row, index);
+    const style = selected
+      ? `style="border-color:${color};background:${hexToRgba(color, 0.10)};color:${row.isTarget ? "#b91c1c" : "#374151"}"`
+      : "";
+    return `
+      <button type="button" data-monitor-name-key="${esc(row.key)}" data-monitor-select-context="${esc(context)}"
+        class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
+          ${selected ? "" : "border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"}"
+        ${style}>
+        <span class="h-2 w-2 rounded-full" style="background:${selected ? color : "#d1d5db"}"></span>
+        <span>${esc(row.title)}</span>
+      </button>`;
+  }).join("");
+  return `
+    <div class="mt-5 rounded-xl border border-brand-100 bg-white p-4 shadow-sm">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <span>名字选择</span>
+          <span class="text-xs font-normal text-gray-400">已选择 ${selectedKeys.size}/${rows.length}</span>
+        </div>
+        <button type="button" data-monitor-select-all data-monitor-select-context="${esc(context)}"
+          class="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
+            ${allSelected ? "border-brand-500 bg-brand-500 text-white" : "border-brand-100 bg-white text-gray-600 hover:border-brand-300 hover:text-brand-700"}">
+          全选
+        </button>
+      </div>
+      <div class="flex flex-wrap gap-2">${items}</div>
+    </div>`;
 }
 function scheduleMonitorRetry() {
   if (monitorRetryTimer || monitorAutoRetryCount >= 5) return;
@@ -1535,8 +1611,14 @@ async function renderMonitor(options) {
   const intervals = monitorIntervals(history, selected.periodId);
   const windowInfo = resolveMonitorWindow(periodHistory);
   const buckets = aggregateMonitorBuckets(intervals, metrics, windowInfo);
-  const visibleRows = monitorRowsForWindow(metrics, buckets);
-  const summary = monitorWindowSummary(metrics, buckets);
+  const selectionContext = monitorSelectionContext(dataset.key, selected.periodId);
+  const selectedKeys = dataset.key === "hot"
+    ? monitorSelectionKeys(selectionContext, metrics)
+    : null;
+  const visibleRows = dataset.key === "hot"
+    ? monitorRowsForSelection(metrics, selectedKeys)
+    : monitorRowsForWindow(metrics, buckets);
+  const summary = monitorWindowSummary(visibleRows, buckets);
   const latest = periodHistory[periodHistory.length - 1];
   const first = periodHistory[0];
   const updated = latest ? formatBeijingClock(latest.ts) : "--";
@@ -1581,6 +1663,9 @@ async function renderMonitor(options) {
       <p class="mt-1 font-display text-3xl text-brand-600">${esc(item.value)}</p>
       <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
     </div>`).join("");
+  const nameSelector = dataset.key === "hot"
+    ? renderMonitorNameSelector(metrics, selectedKeys, selectionContext)
+    : "";
 
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
@@ -1614,6 +1699,7 @@ async function renderMonitor(options) {
               <canvas id="monitorRateChart"></canvas>
             </div>
           </div>
+          ${nameSelector}
         </div>
       </div>
     </div>`;
@@ -1623,6 +1709,33 @@ async function renderMonitor(options) {
   alignMonitorHash();
 }
 function attachMonitorHandlers(c, history) {
+  document.querySelectorAll("[data-monitor-name-key]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const context = btn.dataset.monitorSelectContext || "";
+      const allKeys = Array.from(document.querySelectorAll("[data-monitor-name-key]"))
+        .filter(item => item.dataset.monitorSelectContext === context)
+        .map(item => item.dataset.monitorNameKey);
+      const selected = new Set(monitorSelectedRowKeys[context] || allKeys);
+      const key = btn.dataset.monitorNameKey;
+      if (selected.has(key)) {
+        if (selected.size > 1) selected.delete(key);
+      } else {
+        selected.add(key);
+      }
+      monitorSelectedRowKeys[context] = allKeys.filter(item => selected.has(item));
+      renderMonitor();
+    });
+  });
+  document.querySelectorAll("[data-monitor-select-all]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const context = btn.dataset.monitorSelectContext || "";
+      const allKeys = Array.from(document.querySelectorAll("[data-monitor-name-key]"))
+        .filter(item => item.dataset.monitorSelectContext === context)
+        .map(item => item.dataset.monitorNameKey);
+      monitorSelectedRowKeys[context] = allKeys;
+      renderMonitor();
+    });
+  });
   document.querySelectorAll("[data-monitor-retry]").forEach(btn => {
     btn.addEventListener("click", () => {
       if (monitorRetryTimer) clearTimeout(monitorRetryTimer);
@@ -1670,7 +1783,6 @@ function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visi
   const top = visibleRows && visibleRows.length
     ? visibleRows
     : metrics.slice().sort((a, b) => b.lastDelta - a.lastDelta || a.rank - b.rank).slice(0, 6);
-  const colors = ["#dc2626", "#f97316", "#eab308", "#22c55e", "#0ea5e9", "#8b5cf6"];
   const noAnim = reducedMotion();
   const baseOpts = {
     responsive: true,
@@ -1682,14 +1794,17 @@ function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visi
     type: "line",
     data: {
       labels,
-      datasets: top.map((row, index) => ({
-        label: row.title,
-        data: buckets.length ? buckets.map(bucket => bucket.deltas.get(row.key) || 0) : [0],
-        borderColor: row.isTarget ? "#dc2626" : colors[index % colors.length],
-        backgroundColor: "rgba(220,38,38,0.08)",
-        tension: 0.25,
-        pointRadius: 2,
-      })),
+      datasets: top.map((row, index) => {
+        const color = monitorSeriesColor(row, index);
+        return {
+          label: row.title,
+          data: buckets.length ? buckets.map(bucket => bucket.deltas.get(row.key) || 0) : [0],
+          borderColor: color,
+          backgroundColor: hexToRgba(color, 0.08),
+          tension: 0.25,
+          pointRadius: 2,
+        };
+      }),
     },
     options: Object.assign({}, baseOpts, {
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } },
