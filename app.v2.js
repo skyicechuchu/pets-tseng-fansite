@@ -608,11 +608,8 @@ function renderHotVoteDashboardSection(c, hotState) {
 
   const rows = (period.rows || []).slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
   const target = rows.find(row => row.isTarget) || rows.find(row => String(row.title || "").includes(mgtv.targetName || "曾沛慈")) || rows[0] || {};
-  const targetId = target.coverId || target.title || "";
-  const second = rows.find(row => (row.coverId || row.title || "") !== targetId) || {};
   const hotTotal = sumRows(rows, "interactionValue");
   const awkwardTotal = sumRows(rows, "roundAmount");
-  const lead = Math.max(rowValue(target) - rowValue(second), 0);
   const share = fmtPct(rowValue(target), hotTotal);
   const updated = formatBeijingClock(hotState.updatedAt);
   const sourceLink = mgtv.hotVoteSourceUrl
@@ -623,7 +620,6 @@ function renderHotVoteDashboardSection(c, hotState) {
   const stats = [
     { label: "沛慈夯爆了", value: fmtInt(rowValue(target)), note: `占全榜 ${share}%` },
     { label: "姐姐夯值排名", value: target.rank ? `#${target.rank}` : "--", note: target.guest || "暂无曲目" },
-    { label: "领先第二名", value: fmtInt(lead), note: second.title ? `第二名：${second.title}` : "暂无对比" },
     { label: "沛慈尬场了", value: fmtInt(rowSecondaryValue(target)), note: `全榜尬场了 ${fmtInt(awkwardTotal)}` },
   ].map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
