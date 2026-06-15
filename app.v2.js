@@ -101,7 +101,7 @@ function renderHero() {
 }
 function renderAbout() {
   const a = SITE.about;
-  const bio = a.bio.map(p => `<p class="mb-4 leading-relaxed">${esc(p)}</p>`).join("");
+  const bio = (a.bio || []).map(p => `<p class="mb-4 leading-relaxed">${esc(p)}</p>`).join("");
   const info = a.info.map(i => `
     <div class="flex justify-between py-2.5 border-b border-brand-100 last:border-0">
       <dt class="text-gray-500">${esc(i.label)}</dt>
@@ -131,19 +131,25 @@ function renderAbout() {
   const socialBlock = socials ? `
           <h3 class="font-display text-brand-500 mb-3 mt-7">社交平台</h3>
           <div class="flex flex-wrap gap-3">${socials}</div>` : "";
+  const sourceBlock = bio && a.source
+    ? `<p class="text-xs text-gray-400 mt-6">${esc(a.source)}</p>`
+    : "";
+  const card = `
+        <div class="${bio ? "md:col-span-2" : "mx-auto w-full max-w-xl"} bg-white rounded-2xl shadow-sm border border-brand-100 p-6">
+          <h3 class="font-display text-brand-500 mb-3">个人资料</h3>
+          <dl>${info}</dl>${socialBlock}
+        </div>`;
+  const content = bio
+    ? `<div class="grid md:grid-cols-5 gap-10 items-start">
+        <div class="md:col-span-3 text-gray-700">${bio}${sourceBlock}</div>
+        ${card}
+      </div>`
+    : card;
 
   $("about").innerHTML = `
     <div class="max-w-6xl mx-auto px-5 py-20">
       <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-10 text-center">关于 曾沛慈</h2>
-      <div class="grid md:grid-cols-5 gap-10 items-start">
-        <div class="md:col-span-3 text-gray-700">${bio}
-          <p class="text-xs text-gray-400 mt-6">${esc(a.source)}</p>
-        </div>
-        <div class="md:col-span-2 bg-white rounded-2xl shadow-sm border border-brand-100 p-6">
-          <h3 class="font-display text-brand-500 mb-3">个人资料</h3>
-          <dl>${info}</dl>${socialBlock}
-        </div>
-      </div>
+      ${content}
     </div>`;
 }
 function renderMusic() {
