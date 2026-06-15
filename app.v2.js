@@ -1428,7 +1428,7 @@ function monitorSelectionKeys(context, metrics) {
   const saved = monitorSelectedRowKeys[context];
   if (!saved) return new Set(allKeys);
   const valid = saved.filter(key => allKeys.includes(key));
-  return new Set(valid.length ? valid : allKeys);
+  return new Set(valid);
 }
 function monitorRowsForSelection(metrics, selectedKeys) {
   return metrics
@@ -1491,6 +1491,7 @@ function hexToRgba(hex, alpha) {
 function renderMonitorNameSelector(metrics, selectedKeys, context) {
   const rows = metrics.slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
   const allSelected = rows.every(row => selectedKeys.has(row.key));
+  const noneSelected = selectedKeys.size === 0;
   const items = rows.map((row, index) => {
     const selected = selectedKeys.has(row.key);
     const color = monitorSeriesColor(row, index);
@@ -1513,11 +1514,18 @@ function renderMonitorNameSelector(metrics, selectedKeys, context) {
           <span>名字选择</span>
           <span class="text-xs font-normal text-gray-400">已选择 ${selectedKeys.size}/${rows.length}</span>
         </div>
-        <button type="button" data-monitor-select-all data-monitor-select-context="${esc(context)}"
-          class="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
-            ${allSelected ? "border-brand-500 bg-brand-500 text-white" : "border-brand-100 bg-white text-gray-600 hover:border-brand-300 hover:text-brand-700"}">
-          全选
-        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" data-monitor-select-clear data-monitor-select-context="${esc(context)}"
+            class="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
+              ${noneSelected ? "border-gray-400 bg-gray-100 text-gray-600" : "border-brand-100 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-700"}">
+            清除
+          </button>
+          <button type="button" data-monitor-select-all data-monitor-select-context="${esc(context)}"
+            class="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
+              ${allSelected ? "border-brand-500 bg-brand-500 text-white" : "border-brand-100 bg-white text-gray-600 hover:border-brand-300 hover:text-brand-700"}">
+            全选
+          </button>
+        </div>
       </div>
       <div class="flex flex-wrap gap-2">${items}</div>
     </div>`;
@@ -1736,6 +1744,13 @@ function attachMonitorHandlers(c, history) {
       renderMonitor();
     });
   });
+  document.querySelectorAll("[data-monitor-select-clear]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const context = btn.dataset.monitorSelectContext || "";
+      monitorSelectedRowKeys[context] = [];
+      renderMonitor();
+    });
+  });
   document.querySelectorAll("[data-monitor-retry]").forEach(btn => {
     btn.addEventListener("click", () => {
       if (monitorRetryTimer) clearTimeout(monitorRetryTimer);
@@ -1780,7 +1795,7 @@ function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visi
   const labels = buckets.length
     ? buckets.map(bucket => bucketLabel(bucket.ts, windowInfo.spanMs))
     : ["暂无数据"];
-  const top = visibleRows && visibleRows.length
+  const top = Array.isArray(visibleRows)
     ? visibleRows
     : metrics.slice().sort((a, b) => b.lastDelta - a.lastDelta || a.rank - b.rank).slice(0, 6);
   const noAnim = reducedMotion();
