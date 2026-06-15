@@ -364,6 +364,8 @@ const monitorSelectedPeriodIds = {};
 let monitorHashAligned = false;
 let monitorHistorySource = "local";
 let monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
+let monitorRetryTimer = null;
+let monitorAutoRetryCount = 0;
 let monitorWindowMode = "today";
 let monitorViewAnchorTs = null;
 let mgtvForegroundRefreshBound = false;
@@ -447,6 +449,22 @@ async function fetchWorkerJson(path, params, mgtv) {
   const json = text ? JSON.parse(text) : {};
   if (!res.ok || json.ok === false) throw new Error(json.error || `Worker HTTP ${res.status}`);
   return json;
+}
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+async function fetchWorkerJsonWithRetry(path, params, mgtv, retries) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const bust = attempt ? { _retry: `${Date.now()}-${attempt}` } : {};
+      return await fetchWorkerJson(path, Object.assign({}, params || {}, bust), mgtv);
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) await wait(700 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
 function hydrateMgtvState(raw, source, meta) {
   const periods = (raw.periods || []).map(period => Object.assign({}, period, {
@@ -1030,10 +1048,13 @@ async function loadMonitorHistoryForDisplay(c) {
   monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
   if (workerApiBase(c.mgtv)) {
     try {
-      const json = await fetchWorkerJson(dataset.historyPath, { limit: MONITOR_WORKER_HISTORY_LIMIT }, c.mgtv);
+      const json = await fetchWorkerJsonWithRetry(dataset.historyPath, { limit: MONITOR_WORKER_HISTORY_LIMIT }, c.mgtv, 2);
       const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
       monitorHistorySource = "worker";
       monitorHistoryStatus = { ok: true, source: "worker", count: snapshots.length, error: "" };
+      monitorAutoRetryCount = 0;
+      if (monitorRetryTimer) clearTimeout(monitorRetryTimer);
+      monitorRetryTimer = null;
       return snapshots;
     } catch (e) {
       console.warn("Worker 历史暂时不可用，改用浏览器本地历史", e);
@@ -1417,16 +1438,30 @@ function monitorDatasetTabs(c) {
       </span>`;
   }).join("");
 }
+function scheduleMonitorRetry() {
+  if (monitorRetryTimer || monitorAutoRetryCount >= 5) return;
+  monitorAutoRetryCount += 1;
+  monitorRetryTimer = setTimeout(() => {
+    monitorRetryTimer = null;
+    renderMonitor();
+  }, 6000);
+}
 function renderMonitorEmpty(c, history) {
   const dataset = monitorDatasetConfig();
   const samples = history.length;
   const hasWorker = Boolean(workerApiBase(c.mgtv));
   const message = hasWorker && monitorHistoryStatus.ok === false
-    ? "暂时没有连上后台时间序列。这通常是网络、Worker 冷启动、浏览器缓存或页面刚更新时的一次性请求失败；后台数据还在，刷新后会重新拉取。"
+    ? "暂时没有连上后台时间序列。这通常是网络、Worker 冷启动、浏览器缓存或页面刚更新时的一次性请求失败；页面会自动重试，也可以手动重新连接。"
     : hasWorker
       ? `后台采集器正在建立${dataset.emptyName}时间序列，已返回 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
       : `正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。`;
   const datasetTabs = monitorDatasetTabs(c);
+  const retryButton = hasWorker && monitorHistoryStatus.ok === false
+    ? `<button type="button" data-monitor-retry
+          class="mt-5 rounded-full border border-brand-500 bg-brand-500 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600">
+          重新连接
+        </button>`
+    : "";
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20 text-center">
@@ -1438,9 +1473,11 @@ function renderMonitorEmpty(c, history) {
         <p class="mx-auto mt-3 max-w-2xl text-gray-500">
           ${esc(message)}
         </p>
+        ${retryButton}
       </div>
     </div>`;
   attachMonitorHandlers(c, history);
+  if (hasWorker && monitorHistoryStatus.ok === false) scheduleMonitorRetry();
   alignMonitorHash();
 }
 async function renderMonitor() {
@@ -1555,12 +1592,23 @@ async function renderMonitor() {
   alignMonitorHash();
 }
 function attachMonitorHandlers(c, history) {
+  document.querySelectorAll("[data-monitor-retry]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (monitorRetryTimer) clearTimeout(monitorRetryTimer);
+      monitorRetryTimer = null;
+      monitorAutoRetryCount = 0;
+      btn.disabled = true;
+      btn.textContent = "连接中...";
+      renderMonitor();
+    });
+  });
   document.querySelectorAll("[data-monitor-kind]").forEach(btn => {
     btn.addEventListener("click", () => {
       const next = btn.dataset.monitorKind || "hot";
       if (next === monitorDataKind) return;
       monitorDataKind = next;
       monitorViewAnchorTs = null;
+      monitorAutoRetryCount = 0;
       renderMonitor();
     });
   });
