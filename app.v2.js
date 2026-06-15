@@ -369,12 +369,14 @@ let monitorRetryTimer = null;
 let monitorAutoRetryCount = 0;
 let monitorRenderToken = 0;
 let monitorWindowMode = "today";
-let monitorViewAnchorTs = null;
+let monitorRangeStartTs = null;
+let monitorRangeEndTs = null;
 let mgtvForegroundRefreshBound = false;
 let mgtvLastForegroundRefreshAt = 0;
 const MONITOR_STORAGE_KEY = "pets_mgtv_monitor_v1";
 const MONITOR_MAX_SNAPSHOTS = 720;
 const MONITOR_WORKER_HISTORY_LIMIT = 1440;
+const MONITOR_MIN_RANGE_MS = 5 * 60 * 1000;
 const MONITOR_NON_TARGET_COLORS = [
   "#2563eb",
   "#16a34a",
@@ -388,6 +390,11 @@ const MONITOR_NON_TARGET_COLORS = [
   "#06b6d4",
   "#a855f7",
   "#14b8a6",
+];
+const MONITOR_WINDOW_OPTIONS = [
+  { label: "今日", mode: "today" },
+  { label: "6 小时", mode: "6h" },
+  { label: "一周", mode: "7d" },
 ];
 const MONITOR_DATASETS = {
   stage: {
@@ -1194,6 +1201,27 @@ function startOfBeijingDay(ts) {
 function endOfBeijingDay(ts) {
   return startOfBeijingDay(ts) + 24 * 60 * 60 * 1000;
 }
+function beijingDateTimeInputValue(ts) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).formatToParts(new Date(ts));
+  const map = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const hour = map.hour === "24" ? "00" : map.hour;
+  return `${map.year}-${map.month}-${map.day}T${hour}:${map.minute}`;
+}
+function parseBeijingDateTimeInput(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const [, y, m, d, h, min] = match.map(Number);
+  return Date.UTC(y, m - 1, d, h - 8, min, 0, 0);
+}
 function monitorWindowMs(mode) {
   const raw = String(mode || "").trim();
   const value = Number.parseFloat(raw);
@@ -1222,45 +1250,53 @@ function formatMonitorRange(startTs, endTs) {
   const end = formatBeijingTime(endTs, opts);
   return `${start} - ${end}`;
 }
-function resolveMonitorWindow(history) {
+function monitorPresetRange(mode, history) {
   const latest = history[history.length - 1];
   const first = history[0];
   const latestTs = latest ? latest.ts : Date.now();
   const firstTs = first ? first.ts : latestTs;
-  if (!monitorViewAnchorTs) monitorViewAnchorTs = latestTs;
-
-  let startTs;
-  let endTs;
-  if (monitorWindowMode === "today") {
-    startTs = startOfBeijingDay(monitorViewAnchorTs);
-    const firstDay = startOfBeijingDay(firstTs);
-    const latestDay = startOfBeijingDay(latestTs);
-    startTs = Math.max(firstDay, Math.min(latestDay, startTs));
-    endTs = endOfBeijingDay(monitorViewAnchorTs);
-    endTs = startTs + 24 * 60 * 60 * 1000;
-  } else {
-    const span = monitorWindowMs(monitorWindowMode);
-    endTs = monitorViewAnchorTs;
-    startTs = endTs - span;
-  }
-
-  const spanMs = Math.max(endTs - startTs, 60 * 1000);
-  const minAllowed = firstTs;
-  const maxAllowed = latestTs;
-  if (monitorWindowMode !== "today") {
-    if (endTs > maxAllowed) {
-      endTs = maxAllowed;
-      startTs = endTs - spanMs;
-    }
-    if (startTs < minAllowed) {
-      startTs = minAllowed;
-      endTs = Math.min(startTs + spanMs, maxAllowed);
+  const endTs = latestTs;
+  const startTs = mode === "today"
+    ? Math.max(firstTs, startOfBeijingDay(latestTs))
+    : Math.max(firstTs, endTs - monitorWindowMs(mode));
+  return normalizeMonitorRange(startTs, endTs, history);
+}
+function normalizeMonitorRange(startTs, endTs, history) {
+  const latest = history[history.length - 1];
+  const first = history[0];
+  const latestTs = latest ? latest.ts : Date.now();
+  const firstTs = first ? first.ts : latestTs;
+  let start = Number.isFinite(startTs) ? startTs : firstTs;
+  let end = Number.isFinite(endTs) ? endTs : latestTs;
+  if (start > end) [start, end] = [end, start];
+  start = Math.max(firstTs, Math.min(latestTs, start));
+  end = Math.max(firstTs, Math.min(latestTs, end));
+  if (end - start < MONITOR_MIN_RANGE_MS) {
+    if (start + MONITOR_MIN_RANGE_MS <= latestTs) {
+      end = start + MONITOR_MIN_RANGE_MS;
+    } else {
+      start = Math.max(firstTs, end - MONITOR_MIN_RANGE_MS);
     }
   }
+  if (end - start < MONITOR_MIN_RANGE_MS) {
+    end = start + MONITOR_MIN_RANGE_MS;
+  }
+  return { startTs: start, endTs: end };
+}
+function resolveMonitorWindow(history) {
+  if (!monitorRangeStartTs || !monitorRangeEndTs) {
+    const preset = monitorPresetRange(monitorWindowMode, history);
+    monitorRangeStartTs = preset.startTs;
+    monitorRangeEndTs = preset.endTs;
+  }
+  const range = normalizeMonitorRange(monitorRangeStartTs, monitorRangeEndTs, history);
+  monitorRangeStartTs = range.startTs;
+  monitorRangeEndTs = range.endTs;
+  const spanMs = Math.max(range.endTs - range.startTs, MONITOR_MIN_RANGE_MS);
 
   return {
-    startTs,
-    endTs,
+    startTs: range.startTs,
+    endTs: range.endTs,
     spanMs,
     bucketMs: monitorBucketMs(spanMs),
   };
@@ -1642,15 +1678,7 @@ async function renderMonitor(options) {
       </button>`;
   }).join("") : "";
 
-  const windowModes = [
-    { label: "今日", mode: "today" },
-    { label: "1 小时", mode: "1h" },
-    { label: "3 小时", mode: "3h" },
-    { label: "6 小时", mode: "6h" },
-    { label: "12 小时", mode: "12h" },
-    { label: "24 小时", mode: "24h" },
-    { label: "一周", mode: "7d" },
-  ].map(item => {
+  const windowModes = MONITOR_WINDOW_OPTIONS.map(item => {
     const active = monitorWindowMode === item.mode;
     return `
       <button type="button" data-monitor-window-mode="${item.mode}"
@@ -1659,10 +1687,34 @@ async function renderMonitor(options) {
         ${esc(item.label)}
       </button>`;
   }).join("");
+  const rangeStartValue = beijingDateTimeInputValue(windowInfo.startTs);
+  const rangeEndValue = beijingDateTimeInputValue(windowInfo.endTs);
+  const timeSelector = `
+    <div class="mt-5 rounded-xl border border-brand-100 bg-white p-4 shadow-sm">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-medium text-gray-700">时间选择</p>
+          <p class="text-xs text-gray-400">北京时间 · 起止间隔至少 5 分钟</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">${windowModes}</div>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <label class="block text-left text-xs font-medium text-gray-500">
+          起始时间
+          <input type="datetime-local" data-monitor-range-start value="${esc(rangeStartValue)}" step="60"
+            class="mt-1 w-full rounded-lg border border-brand-100 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition-colors focus:border-brand-400">
+        </label>
+        <label class="block text-left text-xs font-medium text-gray-500">
+          终止时间
+          <input type="datetime-local" data-monitor-range-end value="${esc(rangeEndValue)}" step="60"
+            class="mt-1 w-full rounded-lg border border-brand-100 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition-colors focus:border-brand-400">
+        </label>
+      </div>
+    </div>`;
 
   const stats = [
     { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
-    { label: "当前时间窗", value: monitorWindowMode === "today" ? "当天" : formatMonitorDuration(windowInfo.spanMs), note: formatMonitorRange(windowInfo.startTs, windowInfo.endTs) },
+    { label: "当前时间窗", value: formatMonitorDuration(windowInfo.spanMs), note: formatMonitorRange(windowInfo.startTs, windowInfo.endTs) },
     { label: "窗口新增", value: fmtInt(summary.total), note: summary.top && summary.top.value ? `最高：${summary.top.row.title}` : "暂无新增" },
     { label: "合并粒度", value: formatMonitorDuration(windowInfo.bucketMs), note: `${buckets.length} 个时间点 · ${summary.activeCount} 个${dataset.valueLabel}有新增` },
   ].map(item => `
@@ -1691,9 +1743,7 @@ async function renderMonitor(options) {
 
         ${periodTabs ? `<div class="mt-8 flex flex-wrap items-center justify-center gap-3">${periodTabs}</div>` : ""}
 
-        <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
-          ${windowModes}
-        </div>
+        ${timeSelector}
 
         <div class="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
 
@@ -1768,7 +1818,9 @@ function attachMonitorHandlers(c, history) {
       const next = btn.dataset.monitorKind || "hot";
       if (next === monitorDataKind) return;
       monitorDataKind = next;
-      monitorViewAnchorTs = null;
+      monitorRangeStartTs = null;
+      monitorRangeEndTs = null;
+      monitorWindowMode = "today";
       monitorAutoRetryCount = 0;
       renderMonitor();
     });
@@ -1782,7 +1834,27 @@ function attachMonitorHandlers(c, history) {
   document.querySelectorAll("[data-monitor-window-mode]").forEach(btn => {
     btn.addEventListener("click", () => {
       monitorWindowMode = btn.dataset.monitorWindowMode || "today";
-      monitorViewAnchorTs = (history && history[history.length - 1] && history[history.length - 1].ts) || monitorViewAnchorTs;
+      const preset = monitorPresetRange(monitorWindowMode, history || []);
+      monitorRangeStartTs = preset.startTs;
+      monitorRangeEndTs = preset.endTs;
+      renderMonitor();
+    });
+  });
+  document.querySelectorAll("[data-monitor-range-start], [data-monitor-range-end]").forEach(input => {
+    input.addEventListener("change", event => {
+      const startInput = document.querySelector("[data-monitor-range-start]");
+      const endInput = document.querySelector("[data-monitor-range-end]");
+      let startTs = parseBeijingDateTimeInput(startInput && startInput.value);
+      let endTs = parseBeijingDateTimeInput(endInput && endInput.value);
+      const changedStart = event.currentTarget && event.currentTarget.matches("[data-monitor-range-start]");
+      if (startTs == null || endTs == null) return;
+      if (endTs - startTs < MONITOR_MIN_RANGE_MS) {
+        if (changedStart) endTs = startTs + MONITOR_MIN_RANGE_MS;
+        else startTs = endTs - MONITOR_MIN_RANGE_MS;
+      }
+      monitorWindowMode = "custom";
+      monitorRangeStartTs = startTs;
+      monitorRangeEndTs = endTs;
       renderMonitor();
     });
   });
