@@ -7,7 +7,7 @@ const SITE = {
   // ---- 基本信息 ----
   name: "曾沛慈",
   enName: "Pets Tseng",
-  tagline: "国民姐姐 · 用声音说故事的人",
+  tagline: "用声音说故事的人",
   heroNote: "歌手 · 演员 · 主持 — 从乐团主唱到金曲提名，一路用作品证明自己",
 
   // ---- Banner 轮播图（本地保存，来源：曾沛慈 Instagram @tseng_pets_ohyeah 及华研国际官方）----
