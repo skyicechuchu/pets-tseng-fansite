@@ -1,0 +1,21 @@
+name = "pets-vote-monitor"
+main = "workers/mgtv-monitor/index.js"
+compatibility_date = "2026-06-15"
+workers_dev = true
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+MGTV_API_BASE = "https://hb-mangott.api.mgtv.com"
+MGTV_APP_ID = "1"
+MGTV_PLATFORM = "iphone"
+MGTV_TARGET_NAME = "曾沛慈"
+RETENTION_DAYS = "14"
+CORS_ORIGIN = "*"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pets_vote_monitor"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "workers/mgtv-monitor/migrations"

@@ -4,7 +4,11 @@
   "description": "",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "worker:d1:create": "npx wrangler d1 create pets_vote_monitor",
+    "worker:d1:migrate": "npx wrangler d1 migrations apply pets_vote_monitor --remote --config wrangler.toml",
+    "worker:dev": "npx wrangler dev --test-scheduled --config wrangler.toml",
+    "worker:deploy": "npx wrangler deploy --config wrangler.toml",
+    "check": "node --check app.v2.js && node --check data.v2.js && node --check workers/mgtv-monitor/index.js"
   },
   "keywords": [],
   "author": "",

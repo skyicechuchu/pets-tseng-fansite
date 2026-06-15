@@ -354,8 +354,10 @@ let monitorRateChart = null;
 let monitorShareChart = null;
 let monitorSelectedPeriodId = null;
 let monitorHashAligned = false;
+let monitorHistorySource = "local";
 const MONITOR_STORAGE_KEY = "pets_mgtv_monitor_v1";
 const MONITOR_MAX_SNAPSHOTS = 720;
+const MONITOR_WORKER_HISTORY_LIMIT = 720;
 
 function fmtInt(n) {
   return Number(n || 0).toLocaleString("zh-CN");
@@ -367,6 +369,49 @@ function fmtPct(value, total) {
 function shortDateRange(period) {
   const short = (s) => String(s || "").replace(/^\d{4}-/, "").replace(/:\d{2}$/, "");
   return period.startTime && period.endTime ? `${short(period.startTime)} - ${short(period.endTime)}` : "";
+}
+function workerApiBase(mgtv) {
+  return String(mgtv && mgtv.workerApiBase || "").trim().replace(/\/$/, "");
+}
+function workerUrl(path, params, mgtv) {
+  const base = workerApiBase(mgtv);
+  if (!base) throw new Error("Worker API 未配置");
+  const url = new URL(`${base}${path}`);
+  Object.keys(params || {}).forEach(key => {
+    if (params[key] != null && params[key] !== "") url.searchParams.set(key, params[key]);
+  });
+  return url.toString();
+}
+async function fetchWorkerJson(path, params, mgtv) {
+  const res = await fetch(workerUrl(path, params, mgtv), {
+    headers: { "Accept": "application/json" },
+    cache: "no-store",
+  });
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : {};
+  if (!res.ok || json.ok === false) throw new Error(json.error || `Worker HTTP ${res.status}`);
+  return json;
+}
+function hydrateMgtvState(raw, source, meta) {
+  const periods = (raw.periods || []).map(period => Object.assign({}, period, {
+    periodId: Number(period.periodId),
+    targetValueInt: Number(period.targetValueInt || 0),
+    rows: (period.rows || []).map(row => Object.assign({}, row, {
+      rank: Number(row.rank || 0),
+      interactionValue: Number(row.interactionValue || 0),
+      roundAmount: Number(row.roundAmount || 0),
+      onScreenCount: Number(row.onScreenCount || 0),
+      isTarget: Boolean(row.isTarget),
+    })),
+  }));
+  return {
+    config: raw.config || {},
+    periods,
+    currentPeriodId: Number(raw.currentPeriodId || (periods[0] && periods[0].periodId) || 0),
+    updatedAt: raw.updatedAt ? new Date(raw.updatedAt) : new Date(),
+    source: source || "live",
+    meta: meta || {},
+  };
 }
 function mgtvParams(extra, mgtv) {
   return Object.assign({
@@ -415,7 +460,7 @@ function normalizeMgtvRow(item, targetName) {
     isTarget: guest.includes(targetName) || title.includes(targetName),
   };
 }
-async function loadMgtvDashboardData(campaign) {
+async function loadLiveMgtvDashboardData(campaign) {
   const mgtv = campaign.mgtv;
   const targetName = mgtv.targetName || "曾沛慈";
   const config = await fetchMgtv("/online/live/campaign/config", mgtvParams({}, mgtv), mgtv);
@@ -431,12 +476,26 @@ async function loadMgtvDashboardData(campaign) {
     merged.rows = (data.list || []).map(row => normalizeMgtvRow(row, targetName));
     return merged;
   }));
-  return {
+  return hydrateMgtvState({
     config,
     periods,
     currentPeriodId: Number(current.periodId || (periods[0] && periods[0].periodId) || 0),
-    updatedAt: new Date(),
-  };
+    updatedAt: new Date().toISOString(),
+  }, "live");
+}
+async function loadWorkerMgtvDashboardData(campaign) {
+  const json = await fetchWorkerJson("/latest", {}, campaign.mgtv);
+  return hydrateMgtvState(json.state || {}, "worker", json.meta);
+}
+async function loadMgtvDashboardData(campaign) {
+  if (workerApiBase(campaign.mgtv)) {
+    try {
+      return await loadWorkerMgtvDashboardData(campaign);
+    } catch (err) {
+      console.warn("Worker 数据暂时不可用，改用 MGTV 实时接口", err);
+    }
+  }
+  return loadLiveMgtvDashboardData(campaign);
 }
 function sumRows(rows, key) {
   return rows.reduce((total, row) => total + Number(row[key] || 0), 0);
@@ -493,6 +552,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError) {
   const target = Number(selected.targetValueInt || 0);
   const progress = fmtPct(mainTarget.roundAmount, target);
   const updatedText = state.updatedAt.toLocaleTimeString("zh-CN", { hour12: false });
+  const sourceBadge = state.source === "worker" ? "后台每分钟监控" : "MGTV 实时接口";
   const sourceLink = mgtv.sourceUrl
     ? `<a href="${esc(mgtv.sourceUrl)}" target="_blank" rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">芒推推页面 ${ICON.external}</a>`
@@ -561,7 +621,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError) {
     <div class="bg-gradient-to-b from-white/60 to-brand-100/40">
       <div class="max-w-6xl mx-auto px-5 py-20">
         <div class="mb-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
-          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">MGTV 实时接口</span>
+          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">${esc(sourceBadge)}</span>
           <span>更新于 ${esc(updatedText)}</span>
           <span>每 ${Math.round((mgtv.refreshMs || 60000) / 1000)} 秒刷新</span>
           ${staleText}
@@ -740,12 +800,39 @@ function saveMonitorHistory(history) {
     console.warn("saveMonitorHistory", e);
   }
 }
+function hydrateMonitorSnapshot(snapshot) {
+  return Object.assign({}, snapshot, {
+    ts: Number(snapshot.ts || Date.parse(snapshot.iso) || 0),
+    rows: (snapshot.rows || []).map(row => Object.assign({}, row, {
+      periodId: Number(row.periodId),
+      rank: Number(row.rank || 0),
+      interactionValue: Number(row.interactionValue || 0),
+      roundAmount: Number(row.roundAmount || 0),
+      onScreenCount: Number(row.onScreenCount || 0),
+      isTarget: Boolean(row.isTarget),
+    })),
+  });
+}
+async function loadMonitorHistoryForDisplay(c) {
+  if (workerApiBase(c.mgtv)) {
+    try {
+      const json = await fetchWorkerJson("/history", { limit: MONITOR_WORKER_HISTORY_LIMIT }, c.mgtv);
+      const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
+      monitorHistorySource = "worker";
+      return snapshots;
+    } catch (e) {
+      console.warn("Worker 历史暂时不可用，改用浏览器本地历史", e);
+    }
+  }
+  monitorHistorySource = "local";
+  return loadMonitorHistory();
+}
 function snapshotFromMgtvState(state) {
   const rows = [];
   (state.periods || []).forEach(period => {
     (period.rows || []).forEach(row => {
       rows.push({
-        key: `${period.periodId}:${row.coverId || row.title}`,
+        key: `${period.periodId}:${row.coverId || `${row.title}:${row.rank}`}`,
         periodId: Number(period.periodId),
         periodLabel: period.periodLabel,
         title: row.title,
@@ -900,23 +987,27 @@ function latestPeriodId(history) {
 }
 function renderMonitorEmpty(c, history) {
   const samples = history.length;
+  const hasWorker = Boolean(workerApiBase(c.mgtv));
+  const message = hasWorker
+    ? `后台采集器正在建立时间序列，已记录 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
+    : `正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。`;
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20 text-center">
         <span class="inline-block rounded-full bg-white px-3 py-1 text-xs font-medium text-brand-600 shadow-sm">自动监控</span>
         <h2 class="mt-4 font-display text-3xl sm:text-4xl text-brand-600">数据监控</h2>
         <p class="mx-auto mt-3 max-w-2xl text-gray-500">
-          正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。
+          ${esc(message)}
         </p>
       </div>
     </div>`;
   attachMonitorHandlers(c);
   alignMonitorHash();
 }
-function renderMonitor() {
+async function renderMonitor() {
   const c = SITE.campaign;
   if (!c || !c.mgtv) return;
-  const history = loadMonitorHistory();
+  const history = await loadMonitorHistoryForDisplay(c);
   if (history.length < 1) {
     renderMonitorEmpty(c, history);
     return;
@@ -954,7 +1045,7 @@ function renderMonitor() {
 
   const stats = [
     { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
-    { label: "监控时长", value: formatMonitorDuration(latest && first ? latest.ts - first.ts : 0), note: "打开页面后自动累计" },
+    { label: "监控时长", value: formatMonitorDuration(latest && first ? latest.ts - first.ts : 0), note: monitorHistorySource === "worker" ? "后台每分钟采集" : "打开页面后自动累计" },
     { label: "最近区间新增", value: fmtInt(latestTotalDelta), note: lastInterval ? `${Math.round(lastInterval.minutes * 10) / 10} 分钟内` : "等待下一次采样" },
     { label: "异常信号", value: `${flagged}`, note: topDelta ? `最大新增：${topDelta.title}` : "暂无增量" },
   ].map(item => `
@@ -983,7 +1074,7 @@ function renderMonitor() {
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20">
         <div class="mb-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
-          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">自动监控</span>
+          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">${monitorHistorySource === "worker" ? "后台时间序列" : "自动监控"}</span>
           <span>最近采样 ${esc(updated)}</span>
           <span>采样越多，判断越稳</span>
         </div>

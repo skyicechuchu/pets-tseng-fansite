@@ -7,13 +7,41 @@
 ```
 pets-tseng-site/
 ├── index.html   # 页面骨架（主题、字体、CDN、区块容器、导航、CD 旋转动画 CSS）
-├── data.js      # 【所有内容/数据集中在这里】改这个文件即可更新网站
-├── app.js       # 渲染逻辑（把 data.js 的内容填进页面 + 画图表）
+├── data.v2.js   # 【所有内容/数据集中在这里】改这个文件即可更新网站
+├── app.v2.js    # 渲染逻辑（把 data.v2.js 的内容填进页面 + 画图表）
+├── wrangler.toml
+├── workers/mgtv-monitor/ # Cloudflare Worker 后台采集器与 D1 migration
 ├── docs/plans/  # 实现计划文档
 └── README.md
 ```
 
 技术栈：HTML5 + Tailwind CSS (CDN) + Chart.js (CDN) + 原生 JavaScript。无需 npm / 构建。
+
+## 分钟级投票监控架构
+
+GitHub Pages 继续负责展示静态页面；Cloudflare Worker 负责后台每分钟采集 MGTV 票数，并把时间序列存进 Cloudflare D1。
+
+```
+GitHub Pages
+  └─ 读取 Worker API：/latest /history
+Cloudflare Worker
+  ├─ Cron Trigger：* * * * * 每分钟采集
+  └─ D1：保存分钟级快照与拆分后的榜单行
+```
+
+前端配置在 `data.v2.js`：
+
+```js
+workerApiBase: "",
+```
+
+部署 Worker 后，把它改成你的 Worker URL，例如：
+
+```js
+workerApiBase: "https://pets-vote-monitor.<你的 workers 子域>.workers.dev",
+```
+
+为空时，网页会自动 fallback 到浏览器直连 MGTV 接口；填好后，`数据看板` 会读 Worker 的 `/latest`，`数据监控` 会读 Worker 的 `/history`，所有访客看到同一份后台采集历史。
 
 ## 本地预览
 
@@ -23,11 +51,78 @@ python3 -m http.server 8099
 # 浏览器打开 http://localhost:8099
 ```
 
-必须用 http server 打开，不要直接 file:// 双击 index.html，否则 data.js/app.js 加载会受限。
+必须用 http server 打开，不要直接 file:// 双击 index.html，否则 data.v2.js/app.v2.js 加载会受限。
 
-## 如何更新内容（只改 data.js）
+## Cloudflare Worker 部署
 
-打开 `data.js`，里面是一个全局 `SITE` 对象：
+首次部署需要 Cloudflare 账号登录 Wrangler：
+
+```bash
+npx wrangler login
+```
+
+创建 D1 数据库：
+
+```bash
+npm run worker:d1:create
+```
+
+命令会输出一段 `[[d1_databases]]` 配置。把其中的 `database_id` 复制到 `wrangler.toml`，替换：
+
+```toml
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+```
+
+应用 D1 migration：
+
+```bash
+npm run worker:d1:migrate
+```
+
+设置一个手动采样 token。这个 token 只用于你自己触发 `/admin/collect`，不要写进仓库：
+
+```bash
+npx wrangler secret put COLLECT_TOKEN --config wrangler.toml
+```
+
+部署 Worker：
+
+```bash
+npm run worker:deploy
+```
+
+部署成功后，Cloudflare 会给出 Worker URL。把这个 URL 填回 `data.v2.js` 的 `workerApiBase`，再提交推送到 GitHub Pages。
+
+如果想马上产生第一条数据，可以手动触发一次：
+
+```bash
+curl -X POST "https://pets-vote-monitor.<你的 workers 子域>.workers.dev/admin/collect" \
+  -H "Authorization: Bearer <你的 COLLECT_TOKEN>"
+```
+
+也可以等 Cron 自动执行。`wrangler.toml` 已配置：
+
+```toml
+[triggers]
+crons = ["* * * * *"]
+```
+
+本地开发 Worker：
+
+```bash
+npm run worker:dev
+curl "http://localhost:8787/cdn-cgi/handler/scheduled?format=json"
+```
+
+常用公开 API：
+
+- `GET /health`：查看 D1 里有多少快照、最近一次采样时间。
+- `GET /latest`：返回最新完整榜单状态。
+- `GET /history?limit=720`：返回最近 720 个快照，用于监控页趋势和异常分析。
+
+## 如何更新内容（只改 data.v2.js）
+
+打开 `data.v2.js`，里面是一个全局 `SITE` 对象：
 
 - `SITE.name` / `SITE.enName` / `SITE.tagline` / `SITE.heroNote` —— 首屏标题与标语。
 - `SITE.about` —— `bio`（段落数组）+ `info`（资料卡 label/value）+ `source`（来源说明）。
@@ -46,17 +141,13 @@ python3 -m http.server 8099
     - `olODk6jhMhM` 一个人想着一个人（Timeless Music 官方）
     - `7dKOb-dKAyg` 不过失去了一点点（福茂唱片 官方）
     - `lODRdCZU3Vs` 我的泪（福茂唱片 官方）
-- `SITE.campaign` —— **应援打投数据看板**。目前是【示例数据】，`isDemo:true` 时页面顶部
-  显示"示例数据"标识。换成真实数据后把 `isDemo` 设为 false。
-  - `stats` —— 4 个统计卡（label/value/delta/up）。
-  - `funding` —— 集资进度条（current/goal/unit/label，进度按 current/goal 自动算）。
-  - `ranking` —— 音源榜对比（横向条形图，`highlight` 指定的名字自动高亮品牌色）。
-  - `trend` —— 每日投票趋势（折线图，labels/values）。
+- `SITE.campaign` —— **乘风2026 芒推推助力统计**。
+  - `mgtv.apiBase` —— MGTV 接口地址。
+  - `mgtv.targetName` —— 高亮监控对象，当前为「曾沛慈」。
+  - `mgtv.workerApiBase` —— Cloudflare Worker API 地址；为空时使用浏览器直连 fallback。
 - `SITE.links` —— 页脚官方链接。`SITE.disclaimer` —— 免责声明。
 
 改完保存，刷新页面即可，无需重新构建。
-
-> ⚠️ 看板数字目前是占位示例，页面也明确标注"示例数据"。换成真实应援数据前请勿对外宣称为真实战绩。
 
 ## 部署（任选其一，全部免费）
 
