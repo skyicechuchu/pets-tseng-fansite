@@ -903,15 +903,11 @@ function renderMonitorEmpty(c, history) {
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20 text-center">
-        <span class="inline-block rounded-full bg-white px-3 py-1 text-xs font-medium text-brand-600 shadow-sm">本机采样</span>
+        <span class="inline-block rounded-full bg-white px-3 py-1 text-xs font-medium text-brand-600 shadow-sm">自动监控</span>
         <h2 class="mt-4 font-display text-3xl sm:text-4xl text-brand-600">数据监控</h2>
         <p class="mx-auto mt-3 max-w-2xl text-gray-500">
-          已记录 ${samples} 个快照。至少需要 2 个快照才能看到增量，3 个以上快照后异常评分会更稳定。
+          正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。
         </p>
-        <button type="button" data-monitor-refresh
-          class="mt-8 rounded-full bg-brand-500 px-6 py-3 font-bold text-white shadow-sm hover:bg-brand-600 transition-colors">
-          立即采样
-        </button>
       </div>
     </div>`;
   attachMonitorHandlers(c);
@@ -958,7 +954,7 @@ function renderMonitor() {
 
   const stats = [
     { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
-    { label: "监控时长", value: formatMonitorDuration(latest && first ? latest.ts - first.ts : 0), note: "本机浏览器历史" },
+    { label: "监控时长", value: formatMonitorDuration(latest && first ? latest.ts - first.ts : 0), note: "打开页面后自动累计" },
     { label: "最近区间新增", value: fmtInt(latestTotalDelta), note: lastInterval ? `${Math.round(lastInterval.minutes * 10) / 10} 分钟内` : "等待下一次采样" },
     { label: "异常信号", value: `${flagged}`, note: topDelta ? `最大新增：${topDelta.title}` : "暂无增量" },
   ].map(item => `
@@ -987,7 +983,7 @@ function renderMonitor() {
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20">
         <div class="mb-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
-          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">本机时间序列</span>
+          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">自动监控</span>
           <span>最近采样 ${esc(updated)}</span>
           <span>采样越多，判断越稳</span>
         </div>
@@ -998,14 +994,6 @@ function renderMonitor() {
 
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
           ${periodTabs}
-        </div>
-        <div class="mt-6 flex flex-wrap items-center justify-center gap-3 text-sm">
-          <button type="button" data-monitor-refresh
-            class="rounded-full border border-brand-200 bg-white px-4 py-2 font-medium text-brand-600 hover:border-brand-500 transition-colors">立即采样</button>
-          <button type="button" data-monitor-export
-            class="rounded-full border border-brand-200 bg-white px-4 py-2 font-medium text-brand-600 hover:border-brand-500 transition-colors">导出 CSV</button>
-          <button type="button" data-monitor-clear
-            class="rounded-full border border-gray-200 bg-white px-4 py-2 font-medium text-gray-500 hover:border-brand-300 hover:text-brand-600 transition-colors">清空本地历史</button>
         </div>
 
         <div class="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
@@ -1062,17 +1050,6 @@ function attachMonitorHandlers(c) {
       renderMonitor();
     });
   });
-  const refresh = document.querySelector("[data-monitor-refresh]");
-  if (refresh) refresh.addEventListener("click", () => loadAndRenderMgtvDashboard(c, monitorSelectedPeriodId || dashboardSelectedPeriodId));
-  const clear = document.querySelector("[data-monitor-clear]");
-  if (clear) clear.addEventListener("click", () => {
-    if (window.confirm("清空当前浏览器保存的监控历史？")) {
-      localStorage.removeItem(MONITOR_STORAGE_KEY);
-      renderMonitor();
-    }
-  });
-  const exportBtn = document.querySelector("[data-monitor-export]");
-  if (exportBtn) exportBtn.addEventListener("click", exportMonitorCsv);
 }
 function drawMonitorCharts(history, periodId, metrics) {
   if (monitorRateChart) monitorRateChart.destroy();
@@ -1135,25 +1112,6 @@ function drawMonitorCharts(history, periodId, metrics) {
       cutout: "62%",
     }),
   });
-}
-function exportMonitorCsv() {
-  const history = loadMonitorHistory();
-  const lines = [["snapshot_at", "period_id", "period_label", "rank", "title", "guest", "interaction_value", "round_amount", "on_screen_count", "is_target"]];
-  history.forEach(snapshot => {
-    const at = new Date(snapshot.ts).toISOString();
-    snapshot.rows.forEach(row => {
-      lines.push([at, row.periodId, row.periodLabel, row.rank, row.title, row.guest, row.interactionValue, row.roundAmount, row.onScreenCount, row.isTarget ? "1" : "0"]);
-    });
-  });
-  const csv = lines.map(row => row.map(value => `"${String(value == null ? "" : value).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `mgtv-monitor-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 function alignMonitorHash() {
   if (monitorHashAligned || window.location.hash !== "#monitor") return;
