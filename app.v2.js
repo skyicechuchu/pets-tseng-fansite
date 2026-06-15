@@ -356,6 +356,8 @@ let monitorHashAligned = false;
 let monitorHistorySource = "local";
 let monitorWindowMode = "today";
 let monitorViewAnchorTs = null;
+let mgtvForegroundRefreshBound = false;
+let mgtvLastForegroundRefreshAt = 0;
 const MONITOR_STORAGE_KEY = "pets_mgtv_monitor_v1";
 const MONITOR_MAX_SNAPSHOTS = 720;
 const MONITOR_WORKER_HISTORY_LIMIT = 1440;
@@ -783,6 +785,26 @@ function renderDashboard() {
     loadAndRenderMgtvDashboard(c);
     return;
   }
+}
+function refreshMgtvOnForeground() {
+  const c = SITE.campaign;
+  if (!c || !c.mgtv) return;
+  const now = Date.now();
+  if (now - mgtvLastForegroundRefreshAt < 15000) return;
+  mgtvLastForegroundRefreshAt = now;
+  loadAndRenderMgtvDashboard(c, dashboardSelectedPeriodId, true);
+}
+function initMgtvForegroundRefresh() {
+  if (mgtvForegroundRefreshBound) return;
+  mgtvForegroundRefreshBound = true;
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshMgtvOnForeground();
+  });
+  window.addEventListener("hashchange", () => {
+    if (window.location.hash === "#dashboard" || window.location.hash === "#monitor") {
+      refreshMgtvOnForeground();
+    }
+  });
 }
 function loadMonitorHistory() {
   try {
@@ -1406,6 +1428,7 @@ function init() {
   try { renderSchedule(); } catch (e) { console.error("renderSchedule", e); }
   try { renderDashboard(); } catch (e) { console.error("renderDashboard", e); }
   try { renderMonitor(); } catch (e) { console.error("renderMonitor", e); }
+  try { initMgtvForegroundRefresh(); } catch (e) { console.error("initMgtvForegroundRefresh", e); }
   try { renderFooter(); } catch (e) { console.error("renderFooter", e); }
   try { initNavHighlight(); } catch (e) { console.error("initNavHighlight", e); }
 }
