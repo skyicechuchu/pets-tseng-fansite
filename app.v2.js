@@ -1114,6 +1114,10 @@ function formatMonitorDuration(ms) {
   if (!ms || ms < 60000) return "不足 1 分钟";
   const mins = Math.round(ms / 60000);
   if (mins < 60) return `${mins} 分钟`;
+  if (mins % (24 * 60) === 0) {
+    const days = mins / (24 * 60);
+    return days === 7 ? "一周" : `${days} 天`;
+  }
   const hours = Math.floor(mins / 60);
   const rest = mins % 60;
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
@@ -1132,15 +1136,20 @@ function endOfBeijingDay(ts) {
   return startOfBeijingDay(ts) + 24 * 60 * 60 * 1000;
 }
 function monitorWindowMs(mode) {
-  const hours = Number(String(mode || "").replace("h", ""));
-  return Number.isFinite(hours) && hours > 0 ? hours * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  const raw = String(mode || "").trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value) || value <= 0) return 24 * 60 * 60 * 1000;
+  if (raw.endsWith("d")) return value * 24 * 60 * 60 * 1000;
+  return value * 60 * 60 * 1000;
 }
 function monitorBucketMs(spanMs) {
   const hour = 60 * 60 * 1000;
   if (spanMs <= 2 * hour) return 60 * 1000;
   if (spanMs <= 6 * hour) return 5 * 60 * 1000;
   if (spanMs <= 12 * hour) return 10 * 60 * 1000;
-  return 15 * 60 * 1000;
+  if (spanMs <= 24 * hour) return 15 * 60 * 1000;
+  if (spanMs <= 3 * 24 * hour) return hour;
+  return 6 * hour;
 }
 function formatMonitorRange(startTs, endTs) {
   const sameDay = beijingDateKey(startTs) === beijingDateKey(endTs - 1);
@@ -1472,6 +1481,8 @@ async function renderMonitor() {
     { label: "3 小时", mode: "3h" },
     { label: "6 小时", mode: "6h" },
     { label: "12 小时", mode: "12h" },
+    { label: "24 小时", mode: "24h" },
+    { label: "一周", mode: "7d" },
   ].map(item => {
     const active = monitorWindowMode === item.mode;
     return `
@@ -1512,10 +1523,6 @@ async function renderMonitor() {
 
         <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
           ${windowModes}
-          <button type="button" data-monitor-pan="-1"
-            class="rounded-full border border-brand-100 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-brand-300 hover:text-brand-700 transition-colors">早些</button>
-          <button type="button" data-monitor-pan="1"
-            class="rounded-full border border-brand-100 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-brand-300 hover:text-brand-700 transition-colors">晚些</button>
         </div>
 
         <div class="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
@@ -1560,9 +1567,6 @@ function attachMonitorHandlers(c, history) {
       monitorViewAnchorTs = (history && history[history.length - 1] && history[history.length - 1].ts) || monitorViewAnchorTs;
       renderMonitor();
     });
-  });
-  document.querySelectorAll("[data-monitor-pan]").forEach(btn => {
-    btn.addEventListener("click", () => panMonitorWindow(history || [], Number(btn.dataset.monitorPan || 0)));
   });
   const wheelTarget = document.querySelector("[data-monitor-chart-wheel]");
   if (wheelTarget) {
