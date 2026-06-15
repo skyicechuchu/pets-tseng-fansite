@@ -351,7 +351,6 @@ let dashboardState = null;
 let dashboardSelectedPeriodId = null;
 let dashboardHashAligned = false;
 let monitorRateChart = null;
-let monitorShareChart = null;
 let monitorSelectedPeriodId = null;
 let monitorHashAligned = false;
 let monitorHistorySource = "local";
@@ -1116,7 +1115,7 @@ async function renderMonitor() {
 
         <div class="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
 
-        <div class="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <div class="mt-8">
           <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
             <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <h3 class="font-medium text-gray-800">${esc(selected.label)}增量走势</h3>
@@ -1124,12 +1123,6 @@ async function renderMonitor() {
             </div>
             <div class="relative w-full min-w-0" style="height:320px;">
               <canvas id="monitorRateChart"></canvas>
-            </div>
-          </div>
-          <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
-            <h3 class="mb-3 font-medium text-gray-800">最近区间增量占比</h3>
-            <div class="relative w-full min-w-0" style="height:320px;">
-              <canvas id="monitorShareChart"></canvas>
             </div>
           </div>
         </div>
@@ -1183,7 +1176,6 @@ function attachMonitorHandlers(c) {
 }
 function drawMonitorCharts(history, periodId, metrics) {
   if (monitorRateChart) monitorRateChart.destroy();
-  if (monitorShareChart) monitorShareChart.destroy();
   if (!window.Chart) return;
 
   const intervals = monitorIntervals(history, periodId);
@@ -1234,22 +1226,6 @@ function drawMonitorCharts(history, periodId, metrics) {
     }),
   });
 
-  const shareRows = metrics.filter(row => row.lastDelta > 0).sort((a, b) => b.lastDelta - a.lastDelta).slice(0, 8);
-  monitorShareChart = new Chart($("monitorShareChart"), {
-    type: "doughnut",
-    data: {
-      labels: shareRows.length ? shareRows.map(row => row.title) : ["暂无新增"],
-      datasets: [{
-        data: shareRows.length ? shareRows.map(row => row.lastDelta) : [1],
-        backgroundColor: shareRows.length ? shareRows.map((row, index) => row.isTarget ? "#dc2626" : colors[(index + 1) % colors.length]) : ["#fee2e2"],
-        borderWidth: 0,
-      }],
-    },
-    options: Object.assign({}, baseOpts, {
-      plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } },
-      cutout: "62%",
-    }),
-  });
 }
 function alignMonitorHash() {
   if (monitorHashAligned || window.location.hash !== "#monitor") return;
