@@ -140,31 +140,19 @@ const SITE = {
     ],
   },
 
-  // ---- 应援打投数据看板 ----【示例数据】拿到真实数字后替换 ----
+  // ---- 应援打投数据看板 ----
   campaign: {
-    title: "应援打投实时看板",
-    subtitle: "比赛 / 打投期间的应援数据汇总",
-    isDemo: true, // 显示「示例数据」标识
-    weibo: {
-      label: "微博《乘风2026》实时榜",
-      note: "示例数据 · 实时排名请见微博",
-      url: "http://t.cn/AXIilX4p",
-    },
-    stats: [
-      { label: "累计投票数", value: "1,284,560", delta: "+12,340", up: true },
-      { label: "音源榜排名", value: "#3", delta: "↑2", up: true },
-      { label: "MV 总播放", value: "892 万", delta: "+5.1 万", up: true },
-    ],
-    ranking: {
-      title: "音源榜实时排名（示例）",
-      labels: ["选手 A", "选手 B", "曾沛慈", "选手 C", "选手 D", "选手 E"],
-      values: [98, 92, 87, 71, 65, 52],
-      highlight: "曾沛慈",
-    },
-    trend: {
-      title: "近 7 日每日投票趋势（示例）",
-      labels: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
-      values: [82000, 95000, 110000, 128000, 156000, 198000, 235000],
+    title: "乘风2026 芒推推助力统计",
+    subtitle: "四个公演舞台的助力值、上屏次数与本轮进度",
+    isDemo: false,
+    mgtv: {
+      appId: 1,
+      platform: "iphone",
+      targetName: "曾沛慈",
+      mode: "sister",
+      refreshMs: 60000,
+      apiBase: "https://hb-mangott.api.mgtv.com",
+      sourceUrl: "https://app.mgtv.com/h/tuitui/detail3?isHideNavBar=1&isFullScreen=1&mode=sister&cid=859271&code=5b68c720",
     },
   },
 
