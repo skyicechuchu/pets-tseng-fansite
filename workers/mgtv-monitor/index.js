@@ -5,7 +5,7 @@ const DEFAULTS = {
   appId: 1,
   platform: "iphone",
   targetName: "曾沛慈",
-  retentionDays: 14,
+  retentionDays: 30,
 };
 
 const HOT_VOTE_PERIOD_ID = 202606;

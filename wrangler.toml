@@ -13,7 +13,7 @@ MGTV_HOT_VOTE_SOURCE = "share_cf_zj_2026_cz"
 MGTV_APP_ID = "1"
 MGTV_PLATFORM = "iphone"
 MGTV_TARGET_NAME = "曾沛慈"
-RETENTION_DAYS = "14"
+RETENTION_DAYS = "30"
 CORS_ORIGIN = "*"
 
 [[d1_databases]]
