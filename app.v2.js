@@ -1220,8 +1220,16 @@ function drawMonitorCharts(history, periodId, metrics) {
     options: Object.assign({}, baseOpts, {
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } },
       scales: {
-        y: { beginAtZero: true, grid: { color: "#fde8e8" }, ticks: { callback: value => fmtInt(value) } },
-        x: { grid: { display: false } },
+        y: {
+          beginAtZero: true,
+          grid: { color: "#fde8e8" },
+          title: { display: true, text: "新增助力数" },
+          ticks: { callback: value => fmtInt(value) },
+        },
+        x: {
+          grid: { display: false },
+          title: { display: true, text: "采样时间" },
+        },
       },
     }),
   });
