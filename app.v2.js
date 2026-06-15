@@ -914,6 +914,28 @@ function monitorIntervals(history, periodId) {
   }
   return pairs;
 }
+function sumRecentDeltas(series, latestTs, minutes) {
+  const cutoff = latestTs - minutes * 60000;
+  return series
+    .filter(item => item.ts >= cutoff)
+    .reduce((sum, item) => sum + item.delta, 0);
+}
+function averageRecentDeltas(series, count, offset) {
+  const end = Math.max(series.length - (offset || 0), 0);
+  const slice = series.slice(Math.max(0, end - count), end);
+  if (!slice.length) return 0;
+  return slice.reduce((sum, item) => sum + item.delta, 0) / slice.length;
+}
+function trendLabel(series, med, lastDelta, delta5) {
+  if (series.length < 4) return "样本积累中";
+  const recentAvg = averageRecentDeltas(series, 3, 0);
+  const prevAvg = averageRecentDeltas(series, 3, 3);
+  if (lastDelta >= 50 && med > 0 && lastDelta >= med * 3) return "短时突增";
+  if (prevAvg > 0 && recentAvg >= prevAvg * 1.6 && delta5 > 0) return "持续升温";
+  if (prevAvg > 0 && recentAvg <= prevAvg * 0.55) return "正在回落";
+  if (delta5 === 0) return "暂无新增";
+  return "相对平稳";
+}
 function monitorMetrics(history, periodId) {
   const latest = history[history.length - 1];
   if (!latest) return [];
@@ -925,16 +947,24 @@ function monitorMetrics(history, periodId) {
     : 0;
 
   return latestRows.map(row => {
-    const series = intervals.map(interval => interval.deltas.get(row.key)).filter(Boolean);
+    const series = intervals.map(interval => {
+      const item = interval.deltas.get(row.key);
+      return item ? Object.assign({}, item, { ts: interval.ts, minutes: interval.minutes }) : null;
+    }).filter(Boolean);
     const deltas = series.map(item => item.delta);
     const lastDelta = deltas.length ? deltas[deltas.length - 1] : 0;
     const lastRate = series.length ? series[series.length - 1].rate : 0;
+    const latestTs = series.length ? series[series.length - 1].ts : 0;
+    const delta5 = latestTs ? sumRecentDeltas(series, latestTs, 5) : 0;
+    const delta15 = latestTs ? sumRecentDeltas(series, latestTs, 15) : 0;
     const prior = deltas.slice(0, -1);
     const med = median(prior);
     const mad = median(prior.map(v => Math.abs(v - med)));
     const robustZ = prior.length >= 3 && mad > 0 ? (lastDelta - med) / (1.4826 * mad) : null;
     const prevDelta = deltas.length >= 2 ? deltas[deltas.length - 2] : null;
     const share = latestTotalDelta ? lastDelta / latestTotalDelta : 0;
+    const baselineRatio = med > 0 ? lastDelta / med : null;
+    const trend = trendLabel(series, med, lastDelta, delta5);
     let score = 0;
     if (robustZ != null) score += Math.max(0, Math.min(3, robustZ));
     else if (prior.length > 0 && lastDelta >= 100 && lastDelta > Math.max(med * 3, med + 100)) score += 1.5;
@@ -951,6 +981,7 @@ function monitorMetrics(history, periodId) {
     if (share >= 0.7 && lastDelta >= 20) signals.push(`区间占比 ${Math.round(share * 100)}%`);
     if (lastRate >= 100) signals.push(`${Math.round(lastRate)}/分钟`);
     if (prevDelta != null && lastDelta >= 50 && lastDelta > Math.max(prevDelta * 3, prevDelta + 100)) signals.push("加速度异常");
+    if (trend !== "相对平稳" && trend !== "样本积累中") signals.push(trend);
     if (!signals.length) signals.push("平稳");
 
     let level = "低";
@@ -968,10 +999,14 @@ function monitorMetrics(history, periodId) {
 
     return Object.assign({}, row, {
       lastDelta,
+      delta5,
+      delta15,
       lastRate,
       medianDelta: med,
+      baselineRatio,
       robustZ,
       share,
+      trend,
       score,
       level,
       levelClass,
@@ -1054,41 +1089,46 @@ async function renderMonitor() {
       <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
     </div>`).join("");
 
-  const tableRows = metrics.map(row => `
-    <tr class="${row.isTarget ? "bg-brand-50/80 text-brand-800" : ""}">
-      <td class="whitespace-nowrap px-3 py-2 font-bold">#${row.rank}</td>
-      <td class="min-w-[9rem] px-3 py-2 font-medium">${esc(row.title)}</td>
-      <td class="px-3 py-2 text-right">${fmtInt(row.lastDelta)}</td>
-      <td class="px-3 py-2 text-right">${fmtInt(Math.round(row.lastRate))}</td>
-      <td class="px-3 py-2 text-right">${fmtInt(Math.round(row.medianDelta))}</td>
-      <td class="px-3 py-2 text-right">${row.robustZ == null ? "--" : row.robustZ.toFixed(1)}</td>
-      <td class="px-3 py-2 text-right">${Math.round(row.share * 100)}%</td>
-      <td class="px-3 py-2">
-        <span class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${row.levelClass}">${esc(row.level)}</span>
-      </td>
-      <td class="min-w-[12rem] px-3 py-2 text-gray-500">${esc(row.signals)}</td>
-    </tr>`).join("");
+  const tableRows = metrics.map(row => {
+    const ratioText = row.baselineRatio == null
+      ? (row.lastDelta > 0 ? "有新增" : "--")
+      : `${row.baselineRatio.toFixed(row.baselineRatio < 10 ? 1 : 0)}x`;
+    return `
+      <tr class="${row.isTarget ? "bg-brand-50/80 text-brand-800" : ""}">
+        <td class="whitespace-nowrap px-3 py-2 font-bold">#${row.rank}</td>
+        <td class="min-w-[9rem] px-3 py-2 font-medium">${esc(row.title)}</td>
+        <td class="px-3 py-2 text-right">${fmtInt(row.lastDelta)}</td>
+        <td class="px-3 py-2 text-right">${fmtInt(row.delta5)}</td>
+        <td class="px-3 py-2 text-right">${fmtInt(row.delta15)}</td>
+        <td class="px-3 py-2 text-right">${fmtInt(Math.round(row.lastRate))}</td>
+        <td class="px-3 py-2 text-right">${esc(ratioText)}</td>
+        <td class="px-3 py-2">
+          <span class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${row.levelClass}">${esc(row.level)}</span>
+        </td>
+        <td class="min-w-[13rem] px-3 py-2 text-gray-500">${esc(row.signals)}</td>
+      </tr>`;
+  }).join("");
 
   const metricGuide = [
     {
-      label: "最近新增",
-      text: "最近两次采样之间增加的助力数。这个数字突然变大，说明这一分钟或这一段时间内有集中增长。",
+      label: "近 1 分钟",
+      text: "最近两次采样之间增加的助力数，适合发现突然冲高，但单独看它容易误判。",
     },
     {
-      label: "速度/分钟",
-      text: "把最近新增除以采样间隔，换算成每分钟增长速度。它适合比较不同采样间隔下的增长强度。",
+      label: "近 5 分钟",
+      text: "把最近几轮采样的新增加总，用来判断突增是否持续，而不是只跳了一下。",
     },
     {
-      label: "历史中位",
-      text: "同一作品过去每个采样区间新增数的中位数，比平均数更不容易被单次极端增长带偏。",
+      label: "近 15 分钟",
+      text: "看短时间累计规模。它比 1 分钟更稳定，适合比较谁在一段时间里持续增长。",
     },
     {
-      label: "Z 分",
-      text: "表示最近新增偏离历史正常波动的程度。数值越高越异常，通常超过 3 就值得重点观察。",
+      label: "相对平时",
+      text: "最近 1 分钟与该作品历史中位新增的倍数。1x 附近通常较正常，3x 以上值得留意。",
     },
     {
-      label: "占比",
-      text: "最近区间里某个作品新增数占全部作品新增数的比例。单个作品长期占比过高，需要结合速度和 Z 分一起看。",
+      label: "状态与判断依据",
+      text: "综合近 1 分钟、近 5 分钟、速度、占比、Z 分和加速度，给出观察等级和原因。",
     },
   ].map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-4 shadow-sm">
@@ -1134,8 +1174,9 @@ async function renderMonitor() {
           </div>
           <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${metricGuide}</div>
           <p class="mt-4 text-sm leading-relaxed text-gray-500">
-            建议重点看「最近新增 + 速度/分钟 + Z 分 + 占比」是否同时偏高。单个指标异常只能说明波动值得留意，
-            不能直接证明作假；连续多轮采样都出现突增、占比过高或加速度异常时，才更适合列入重点观察。
+            建议把「近 1 分钟」当作提醒，把「近 5 分钟 / 近 15 分钟」当作趋势确认。
+            如果只是 1 分钟突然变高但 5 分钟没有延续，可能只是偶发；如果 5 分钟、15 分钟都持续偏高，
+            同时相对平时倍数、占比或 Z 分也异常，才更适合列入重点观察。
           </p>
         </div>
 
@@ -1146,13 +1187,13 @@ async function renderMonitor() {
                 <tr>
                   <th class="px-3 py-2 text-left">排名</th>
                   <th class="px-3 py-2 text-left">作品</th>
-                  <th class="px-3 py-2 text-right">最近新增</th>
-                  <th class="px-3 py-2 text-right">速度/分钟</th>
-                  <th class="px-3 py-2 text-right">历史中位</th>
-                  <th class="px-3 py-2 text-right">Z 分</th>
-                  <th class="px-3 py-2 text-right">占比</th>
+                  <th class="px-3 py-2 text-right">近 1 分钟</th>
+                  <th class="px-3 py-2 text-right">近 5 分钟</th>
+                  <th class="px-3 py-2 text-right">近 15 分钟</th>
+                  <th class="px-3 py-2 text-right">速度/分</th>
+                  <th class="px-3 py-2 text-right">相对平时</th>
                   <th class="px-3 py-2 text-left">等级</th>
-                  <th class="px-3 py-2 text-left">信号</th>
+                  <th class="px-3 py-2 text-left">判断依据</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
