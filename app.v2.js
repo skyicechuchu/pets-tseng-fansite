@@ -369,6 +369,21 @@ function fmtPct(value, total) {
   if (!total) return 0;
   return Math.min(100, Math.round((Number(value || 0) / Number(total)) * 100));
 }
+function formatBeijingTime(ts, opts) {
+  return new Date(ts).toLocaleString("zh-CN", Object.assign({
+    timeZone: "Asia/Shanghai",
+    hour12: false,
+  }, opts || {}));
+}
+function formatBeijingClock(ts) {
+  return formatBeijingTime(ts, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function formatBeijingDate(ts) {
+  return formatBeijingTime(ts, { month: "2-digit", day: "2-digit" });
+}
+function beijingDateKey(ts) {
+  return formatBeijingTime(ts, { year: "numeric", month: "2-digit", day: "2-digit" });
+}
 function shortDateRange(period) {
   const short = (s) => String(s || "").replace(/^\d{4}-/, "").replace(/:\d{2}$/, "");
   return period.startTime && period.endTime ? `${short(period.startTime)} - ${short(period.endTime)}` : "";
@@ -554,7 +569,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError) {
   const screenTotal = sumRows(targetRows, "onScreenCount");
   const target = Number(selected.targetValueInt || 0);
   const progress = fmtPct(mainTarget.roundAmount, target);
-  const updatedText = state.updatedAt.toLocaleTimeString("zh-CN", { hour12: false });
+  const updatedText = formatBeijingClock(state.updatedAt);
   const sourceBadge = state.source === "worker" ? "后台每分钟监控" : "MGTV 实时接口";
   const sourceLink = mgtv.sourceUrl
     ? `<a href="${esc(mgtv.sourceUrl)}" target="_blank" rel="noopener noreferrer"
@@ -625,7 +640,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError) {
       <div class="max-w-6xl mx-auto px-5 py-20">
         <div class="mb-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
           <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">${esc(sourceBadge)}</span>
-          <span>更新于 ${esc(updatedText)}</span>
+          <span>北京时间 ${esc(updatedText)}</span>
           <span>每 ${Math.round((mgtv.refreshMs || 60000) / 1000)} 秒刷新</span>
           ${staleText}
         </div>
@@ -919,13 +934,18 @@ function formatMonitorDuration(ms) {
   const rest = mins % 60;
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
-function startOfLocalDay(ts) {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+function startOfBeijingDay(ts) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(ts));
+  const map = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return Date.UTC(Number(map.year), Number(map.month) - 1, Number(map.day), -8, 0, 0, 0);
 }
-function endOfLocalDay(ts) {
-  return startOfLocalDay(ts) + 24 * 60 * 60 * 1000;
+function endOfBeijingDay(ts) {
+  return startOfBeijingDay(ts) + 24 * 60 * 60 * 1000;
 }
 function monitorWindowMs(mode) {
   const hours = Number(String(mode || "").replace("h", ""));
@@ -939,15 +959,15 @@ function monitorBucketMs(spanMs) {
   return 15 * 60 * 1000;
 }
 function formatMonitorRange(startTs, endTs) {
-  const sameDay = new Date(startTs).toDateString() === new Date(endTs - 1).toDateString();
+  const sameDay = beijingDateKey(startTs) === beijingDateKey(endTs - 1);
   if (sameDay && endTs - startTs >= 23 * 60 * 60 * 1000) {
-    return `${new Date(startTs).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" })} 当天`;
+    return `${formatBeijingDate(startTs)} 当天`;
   }
   const opts = sameDay
     ? { hour: "2-digit", minute: "2-digit", hour12: false }
     : { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
-  const start = new Date(startTs).toLocaleString("zh-CN", opts);
-  const end = new Date(endTs).toLocaleString("zh-CN", opts);
+  const start = formatBeijingTime(startTs, opts);
+  const end = formatBeijingTime(endTs, opts);
   return `${start} - ${end}`;
 }
 function resolveMonitorWindow(history) {
@@ -960,11 +980,11 @@ function resolveMonitorWindow(history) {
   let startTs;
   let endTs;
   if (monitorWindowMode === "today") {
-    startTs = startOfLocalDay(monitorViewAnchorTs);
-    const firstDay = startOfLocalDay(firstTs);
-    const latestDay = startOfLocalDay(latestTs);
+    startTs = startOfBeijingDay(monitorViewAnchorTs);
+    const firstDay = startOfBeijingDay(firstTs);
+    const latestDay = startOfBeijingDay(latestTs);
     startTs = Math.max(firstDay, Math.min(latestDay, startTs));
-    endTs = endOfLocalDay(monitorViewAnchorTs);
+    endTs = endOfBeijingDay(monitorViewAnchorTs);
     endTs = startTs + 24 * 60 * 60 * 1000;
   } else {
     const span = monitorWindowMs(monitorWindowMode);
@@ -1005,7 +1025,7 @@ function bucketLabel(ts, spanMs) {
   const opts = spanMs > 24 * 60 * 60 * 1000
     ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }
     : { hour: "2-digit", minute: "2-digit", hour12: false };
-  return new Date(ts).toLocaleString("zh-CN", opts);
+  return formatBeijingTime(ts, opts);
 }
 function monitorIntervals(history, periodId) {
   const pairs = [];
@@ -1218,7 +1238,7 @@ async function renderMonitor() {
   const summary = monitorWindowSummary(metrics, buckets);
   const latest = periodHistory[periodHistory.length - 1];
   const first = periodHistory[0];
-  const updated = latest ? new Date(latest.ts).toLocaleTimeString("zh-CN", { hour12: false }) : "--";
+  const updated = latest ? formatBeijingClock(latest.ts) : "--";
 
   const periodTabs = periods.map(p => {
     const active = Number(p.periodId) === Number(selected.periodId);
@@ -1263,7 +1283,7 @@ async function renderMonitor() {
       <div class="max-w-6xl mx-auto px-5 py-20">
         <div class="mb-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
           <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">${monitorHistorySource === "worker" ? "后台时间序列" : "自动监控"}</span>
-          <span>最近采样 ${esc(updated)}</span>
+          <span>最近采样 ${esc(updated)} 北京时间</span>
           <span>采样越多，判断越稳</span>
         </div>
         <h2 class="font-display text-3xl sm:text-4xl text-brand-600 text-center">数据监控</h2>
