@@ -354,9 +354,11 @@ let monitorRateChart = null;
 let monitorSelectedPeriodId = null;
 let monitorHashAligned = false;
 let monitorHistorySource = "local";
+let monitorWindowMode = "today";
+let monitorViewAnchorTs = null;
 const MONITOR_STORAGE_KEY = "pets_mgtv_monitor_v1";
 const MONITOR_MAX_SNAPSHOTS = 720;
-const MONITOR_WORKER_HISTORY_LIMIT = 720;
+const MONITOR_WORKER_HISTORY_LIMIT = 1440;
 
 function fmtInt(n) {
   return Number(n || 0).toLocaleString("zh-CN");
@@ -895,6 +897,94 @@ function formatMonitorDuration(ms) {
   const rest = mins % 60;
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
+function startOfLocalDay(ts) {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+function endOfLocalDay(ts) {
+  return startOfLocalDay(ts) + 24 * 60 * 60 * 1000;
+}
+function monitorWindowMs(mode) {
+  const hours = Number(String(mode || "").replace("h", ""));
+  return Number.isFinite(hours) && hours > 0 ? hours * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+}
+function monitorBucketMs(spanMs) {
+  const hour = 60 * 60 * 1000;
+  if (spanMs <= 2 * hour) return 60 * 1000;
+  if (spanMs <= 6 * hour) return 5 * 60 * 1000;
+  if (spanMs <= 12 * hour) return 10 * 60 * 1000;
+  return 15 * 60 * 1000;
+}
+function formatMonitorRange(startTs, endTs) {
+  const sameDay = new Date(startTs).toDateString() === new Date(endTs - 1).toDateString();
+  if (sameDay && endTs - startTs >= 23 * 60 * 60 * 1000) {
+    return `${new Date(startTs).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" })} 当天`;
+  }
+  const opts = sameDay
+    ? { hour: "2-digit", minute: "2-digit", hour12: false }
+    : { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
+  const start = new Date(startTs).toLocaleString("zh-CN", opts);
+  const end = new Date(endTs).toLocaleString("zh-CN", opts);
+  return `${start} - ${end}`;
+}
+function resolveMonitorWindow(history) {
+  const latest = history[history.length - 1];
+  const first = history[0];
+  const latestTs = latest ? latest.ts : Date.now();
+  const firstTs = first ? first.ts : latestTs;
+  if (!monitorViewAnchorTs) monitorViewAnchorTs = latestTs;
+
+  let startTs;
+  let endTs;
+  if (monitorWindowMode === "today") {
+    startTs = startOfLocalDay(monitorViewAnchorTs);
+    const firstDay = startOfLocalDay(firstTs);
+    const latestDay = startOfLocalDay(latestTs);
+    startTs = Math.max(firstDay, Math.min(latestDay, startTs));
+    endTs = endOfLocalDay(monitorViewAnchorTs);
+    endTs = startTs + 24 * 60 * 60 * 1000;
+  } else {
+    const span = monitorWindowMs(monitorWindowMode);
+    endTs = monitorViewAnchorTs;
+    startTs = endTs - span;
+  }
+
+  const spanMs = Math.max(endTs - startTs, 60 * 1000);
+  const minAllowed = firstTs;
+  const maxAllowed = latestTs;
+  if (monitorWindowMode !== "today") {
+    if (endTs > maxAllowed) {
+      endTs = maxAllowed;
+      startTs = endTs - spanMs;
+    }
+    if (startTs < minAllowed) {
+      startTs = minAllowed;
+      endTs = Math.min(startTs + spanMs, maxAllowed);
+    }
+  }
+
+  return {
+    startTs,
+    endTs,
+    spanMs,
+    bucketMs: monitorBucketMs(spanMs),
+  };
+}
+function panMonitorWindow(history, direction) {
+  const windowInfo = resolveMonitorWindow(history);
+  const step = monitorWindowMode === "today"
+    ? 24 * 60 * 60 * 1000
+    : Math.max(windowInfo.spanMs * 0.2, 60 * 1000);
+  monitorViewAnchorTs = (monitorViewAnchorTs || (history[history.length - 1] && history[history.length - 1].ts) || Date.now()) + direction * step;
+  renderMonitor();
+}
+function bucketLabel(ts, spanMs) {
+  const opts = spanMs > 24 * 60 * 60 * 1000
+    ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }
+    : { hour: "2-digit", minute: "2-digit", hour12: false };
+  return new Date(ts).toLocaleString("zh-CN", opts);
+}
 function monitorIntervals(history, periodId) {
   const pairs = [];
   for (let i = 1; i < history.length; i += 1) {
@@ -1015,6 +1105,47 @@ function monitorMetrics(history, periodId) {
     });
   }).sort((a, b) => b.score - a.score || b.lastDelta - a.lastDelta || a.rank - b.rank);
 }
+function aggregateMonitorBuckets(intervals, rows, windowInfo) {
+  const keys = new Set(rows.map(row => row.key));
+  const bucketMap = new Map();
+  intervals.forEach(interval => {
+    if (interval.ts < windowInfo.startTs || interval.ts > windowInfo.endTs) return;
+    const bucketTs = Math.floor(interval.ts / windowInfo.bucketMs) * windowInfo.bucketMs;
+    if (!bucketMap.has(bucketTs)) bucketMap.set(bucketTs, new Map());
+    const bucket = bucketMap.get(bucketTs);
+    keys.forEach(key => {
+      const item = interval.deltas.get(key);
+      bucket.set(key, (bucket.get(key) || 0) + (item ? item.delta : 0));
+    });
+  });
+  return Array.from(bucketMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([ts, deltas]) => ({ ts, deltas }));
+}
+function monitorRowsForWindow(metrics, buckets) {
+  const totals = new Map(metrics.map(row => [row.key, 0]));
+  buckets.forEach(bucket => {
+    bucket.deltas.forEach((value, key) => totals.set(key, (totals.get(key) || 0) + value));
+  });
+  const sorted = metrics
+    .map(row => Object.assign({}, row, { windowTotal: totals.get(row.key) || 0 }))
+    .sort((a, b) => b.windowTotal - a.windowTotal || a.rank - b.rank);
+  const selected = sorted.slice(0, Math.min(sorted.length, 8));
+  metrics.filter(row => row.isTarget && !selected.some(item => item.key === row.key)).forEach(row => selected.push(row));
+  return selected;
+}
+function monitorWindowSummary(metrics, buckets) {
+  const totals = metrics.map(row => ({
+    row,
+    value: buckets.reduce((sum, bucket) => sum + (bucket.deltas.get(row.key) || 0), 0),
+  })).sort((a, b) => b.value - a.value);
+  const total = totals.reduce((sum, item) => sum + item.value, 0);
+  return {
+    total,
+    top: totals[0],
+    activeCount: totals.filter(item => item.value > 0).length,
+  };
+}
 function latestPeriodId(history) {
   const latest = history[history.length - 1];
   return Number((dashboardState && dashboardState.currentPeriodId) || (latest && latest.currentPeriodId) || 0);
@@ -1035,7 +1166,7 @@ function renderMonitorEmpty(c, history) {
         </p>
       </div>
     </div>`;
-  attachMonitorHandlers(c);
+  attachMonitorHandlers(c, history);
   alignMonitorHash();
 }
 async function renderMonitor() {
@@ -1059,12 +1190,12 @@ async function renderMonitor() {
   const periodHistory = history.filter(snapshot => snapshotRowsByPeriod(snapshot, selected.periodId).length);
   const metrics = monitorMetrics(history, selected.periodId);
   const intervals = monitorIntervals(history, selected.periodId);
+  const windowInfo = resolveMonitorWindow(periodHistory);
+  const buckets = aggregateMonitorBuckets(intervals, metrics, windowInfo);
+  const visibleRows = monitorRowsForWindow(metrics, buckets);
+  const summary = monitorWindowSummary(metrics, buckets);
   const latest = periodHistory[periodHistory.length - 1];
   const first = periodHistory[0];
-  const lastInterval = intervals[intervals.length - 1];
-  const latestTotalDelta = metrics.reduce((sum, row) => sum + row.lastDelta, 0);
-  const topDelta = metrics.slice().sort((a, b) => b.lastDelta - a.lastDelta)[0];
-  const flagged = metrics.filter(row => row.sampleCount >= 3 && row.score >= 2).length;
   const updated = latest ? new Date(latest.ts).toLocaleTimeString("zh-CN", { hour12: false }) : "--";
 
   const periodTabs = periods.map(p => {
@@ -1077,63 +1208,32 @@ async function renderMonitor() {
       </button>`;
   }).join("");
 
+  const windowModes = [
+    { label: "今日", mode: "today" },
+    { label: "1 小时", mode: "1h" },
+    { label: "3 小时", mode: "3h" },
+    { label: "6 小时", mode: "6h" },
+    { label: "12 小时", mode: "12h" },
+  ].map(item => {
+    const active = monitorWindowMode === item.mode;
+    return `
+      <button type="button" data-monitor-window-mode="${item.mode}"
+        class="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
+          ${active ? "border-brand-500 bg-brand-500 text-white" : "border-brand-100 bg-white text-gray-600 hover:border-brand-300 hover:text-brand-700"}">
+        ${esc(item.label)}
+      </button>`;
+  }).join("");
+
   const stats = [
     { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
-    { label: "监控时长", value: formatMonitorDuration(latest && first ? latest.ts - first.ts : 0), note: monitorHistorySource === "worker" ? "后台每分钟采集" : "打开页面后自动累计" },
-    { label: "最近区间新增", value: fmtInt(latestTotalDelta), note: lastInterval ? `${Math.round(lastInterval.minutes * 10) / 10} 分钟内` : "等待下一次采样" },
-    { label: "异常信号", value: `${flagged}`, note: topDelta ? `最大新增：${topDelta.title}` : "暂无增量" },
+    { label: "当前时间窗", value: monitorWindowMode === "today" ? "当天" : formatMonitorDuration(windowInfo.spanMs), note: formatMonitorRange(windowInfo.startTs, windowInfo.endTs) },
+    { label: "窗口新增", value: fmtInt(summary.total), note: summary.top && summary.top.value ? `最高：${summary.top.row.title}` : "暂无新增" },
+    { label: "合并粒度", value: formatMonitorDuration(windowInfo.bucketMs), note: `${buckets.length} 个时间点 · ${summary.activeCount} 个作品有新增` },
   ].map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
       <p class="text-sm text-gray-500">${esc(item.label)}</p>
       <p class="mt-1 font-display text-3xl text-brand-600">${esc(item.value)}</p>
       <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
-    </div>`).join("");
-
-  const tableRows = metrics.map(row => {
-    const ratioText = row.baselineRatio == null
-      ? (row.lastDelta > 0 ? "有新增" : "--")
-      : `${row.baselineRatio.toFixed(row.baselineRatio < 10 ? 1 : 0)}x`;
-    return `
-      <tr class="${row.isTarget ? "bg-brand-50/80 text-brand-800" : ""}">
-        <td class="whitespace-nowrap px-3 py-2 font-bold">#${row.rank}</td>
-        <td class="min-w-[9rem] px-3 py-2 font-medium">${esc(row.title)}</td>
-        <td class="px-3 py-2 text-right">${fmtInt(row.lastDelta)}</td>
-        <td class="px-3 py-2 text-right">${fmtInt(row.delta5)}</td>
-        <td class="px-3 py-2 text-right">${fmtInt(row.delta15)}</td>
-        <td class="px-3 py-2 text-right">${fmtInt(Math.round(row.lastRate))}</td>
-        <td class="px-3 py-2 text-right">${esc(ratioText)}</td>
-        <td class="px-3 py-2">
-          <span class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${row.levelClass}">${esc(row.level)}</span>
-        </td>
-        <td class="min-w-[13rem] px-3 py-2 text-gray-500">${esc(row.signals)}</td>
-      </tr>`;
-  }).join("");
-
-  const metricGuide = [
-    {
-      label: "近 1 分钟",
-      text: "最近两次采样之间增加的助力数，适合发现突然冲高，但单独看它容易误判。",
-    },
-    {
-      label: "近 5 分钟",
-      text: "把最近几轮采样的新增加总，用来判断突增是否持续，而不是只跳了一下。",
-    },
-    {
-      label: "近 15 分钟",
-      text: "看短时间累计规模。它比 1 分钟更稳定，适合比较谁在一段时间里持续增长。",
-    },
-    {
-      label: "相对平时",
-      text: "最近 1 分钟与该作品历史中位新增的倍数。1x 附近通常较正常，3x 以上值得留意。",
-    },
-    {
-      label: "状态与判断依据",
-      text: "综合近 1 分钟、近 5 分钟、速度、占比、Z 分和加速度，给出观察等级和原因。",
-    },
-  ].map(item => `
-    <div class="rounded-xl border border-brand-100 bg-white p-4 shadow-sm">
-      <p class="font-bold text-brand-700">${esc(item.label)}</p>
-      <p class="mt-1 text-sm leading-relaxed text-gray-500">${esc(item.text)}</p>
     </div>`).join("");
 
   $("monitor").innerHTML = `
@@ -1153,79 +1253,71 @@ async function renderMonitor() {
           ${periodTabs}
         </div>
 
+        <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
+          ${windowModes}
+          <button type="button" data-monitor-pan="-1"
+            class="rounded-full border border-brand-100 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-brand-300 hover:text-brand-700 transition-colors">早些</button>
+          <button type="button" data-monitor-pan="1"
+            class="rounded-full border border-brand-100 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-brand-300 hover:text-brand-700 transition-colors">晚些</button>
+        </div>
+
         <div class="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
 
         <div class="mt-8">
           <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
             <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <h3 class="font-medium text-gray-800">${esc(selected.label)}增量走势</h3>
-              <p class="text-xs text-gray-400">显示最近采样区间新增助力</p>
+              <p class="text-xs text-gray-400">鼠标滚轮切换时间 · 当前按 ${esc(formatMonitorDuration(windowInfo.bucketMs))} 合并</p>
             </div>
-            <div class="relative w-full min-w-0" style="height:320px;">
+            <div class="relative w-full min-w-0" data-monitor-chart-wheel style="height:420px;">
               <canvas id="monitorRateChart"></canvas>
             </div>
-          </div>
-        </div>
-
-        <div class="mt-6 rounded-xl border border-brand-100 bg-brand-50/80 p-5 shadow-sm">
-          <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <h3 class="font-medium text-gray-800">指标说明</h3>
-            <p class="text-xs text-gray-500">用于理解下方表格和增量走势，不直接判定作假</p>
-          </div>
-          <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${metricGuide}</div>
-          <p class="mt-4 text-sm leading-relaxed text-gray-500">
-            建议把「近 1 分钟」当作提醒，把「近 5 分钟 / 近 15 分钟」当作趋势确认。
-            如果只是 1 分钟突然变高但 5 分钟没有延续，可能只是偶发；如果 5 分钟、15 分钟都持续偏高，
-            同时相对平时倍数、占比或 Z 分也异常，才更适合列入重点观察。
-          </p>
-        </div>
-
-        <div class="mt-6 overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-brand-50 text-xs text-brand-700">
-                <tr>
-                  <th class="px-3 py-2 text-left">排名</th>
-                  <th class="px-3 py-2 text-left">作品</th>
-                  <th class="px-3 py-2 text-right">近 1 分钟</th>
-                  <th class="px-3 py-2 text-right">近 5 分钟</th>
-                  <th class="px-3 py-2 text-right">近 15 分钟</th>
-                  <th class="px-3 py-2 text-right">速度/分</th>
-                  <th class="px-3 py-2 text-right">相对平时</th>
-                  <th class="px-3 py-2 text-left">等级</th>
-                  <th class="px-3 py-2 text-left">判断依据</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
-            </table>
           </div>
         </div>
       </div>
     </div>`;
 
-  attachMonitorHandlers(c);
-  drawMonitorCharts(history, selected.periodId, metrics);
+  attachMonitorHandlers(c, periodHistory);
+  drawMonitorCharts(history, selected.periodId, metrics, windowInfo, buckets, visibleRows);
   alignMonitorHash();
 }
-function attachMonitorHandlers(c) {
+function attachMonitorHandlers(c, history) {
   document.querySelectorAll("[data-monitor-period-id]").forEach(btn => {
     btn.addEventListener("click", () => {
       monitorSelectedPeriodId = Number(btn.dataset.monitorPeriodId);
       renderMonitor();
     });
   });
+  document.querySelectorAll("[data-monitor-window-mode]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      monitorWindowMode = btn.dataset.monitorWindowMode || "today";
+      monitorViewAnchorTs = (history && history[history.length - 1] && history[history.length - 1].ts) || monitorViewAnchorTs;
+      renderMonitor();
+    });
+  });
+  document.querySelectorAll("[data-monitor-pan]").forEach(btn => {
+    btn.addEventListener("click", () => panMonitorWindow(history || [], Number(btn.dataset.monitorPan || 0)));
+  });
+  const wheelTarget = document.querySelector("[data-monitor-chart-wheel]");
+  if (wheelTarget) {
+    wheelTarget.addEventListener("wheel", event => {
+      event.preventDefault();
+      const raw = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (!raw) return;
+      panMonitorWindow(history || [], raw > 0 ? 1 : -1);
+    }, { passive: false });
+  }
 }
-function drawMonitorCharts(history, periodId, metrics) {
+function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visibleRows) {
   if (monitorRateChart) monitorRateChart.destroy();
   if (!window.Chart) return;
 
-  const intervals = monitorIntervals(history, periodId);
-  const labels = intervals.map(interval =>
-    new Date(interval.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }));
-  const top = metrics
-    .slice()
-    .sort((a, b) => b.lastDelta - a.lastDelta || b.interactionValue - a.interactionValue)
-    .slice(0, 6);
+  const labels = buckets.length
+    ? buckets.map(bucket => bucketLabel(bucket.ts, windowInfo.spanMs))
+    : ["暂无数据"];
+  const top = visibleRows && visibleRows.length
+    ? visibleRows
+    : metrics.slice().sort((a, b) => b.lastDelta - a.lastDelta || a.rank - b.rank).slice(0, 6);
   const colors = ["#dc2626", "#f97316", "#eab308", "#22c55e", "#0ea5e9", "#8b5cf6"];
   const noAnim = reducedMotion();
   const baseOpts = {
@@ -1240,10 +1332,7 @@ function drawMonitorCharts(history, periodId, metrics) {
       labels,
       datasets: top.map((row, index) => ({
         label: row.title,
-        data: intervals.map(interval => {
-          const item = interval.deltas.get(row.key);
-          return item ? item.delta : 0;
-        }),
+        data: buckets.length ? buckets.map(bucket => bucket.deltas.get(row.key) || 0) : [0],
         borderColor: row.isTarget ? "#dc2626" : colors[index % colors.length],
         backgroundColor: "rgba(220,38,38,0.08)",
         tension: 0.25,
@@ -1261,7 +1350,7 @@ function drawMonitorCharts(history, periodId, metrics) {
         },
         x: {
           grid: { display: false },
-          title: { display: true, text: "采样时间" },
+          title: { display: true, text: `采样时间（${formatMonitorDuration(windowInfo.bucketMs)}合并）` },
         },
       },
     }),
