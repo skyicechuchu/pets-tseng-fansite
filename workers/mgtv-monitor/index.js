@@ -80,6 +80,7 @@ function config(env) {
     apiBase: env.MGTV_API_BASE || DEFAULTS.apiBase,
     hotVoteApi: env.MGTV_HOT_VOTE_API || DEFAULTS.hotVoteApi,
     hotVoteSource: env.MGTV_HOT_VOTE_SOURCE || DEFAULTS.hotVoteSource,
+    hotVoteCollectionEnabled: env.HOT_VOTE_COLLECTION_ENABLED !== "false",
     appId: Number(env.MGTV_APP_ID || DEFAULTS.appId),
     platform: env.MGTV_PLATFORM || DEFAULTS.platform,
     targetName: env.MGTV_TARGET_NAME || DEFAULTS.targetName,
@@ -285,12 +286,17 @@ async function loadHotVoteState(env, capturedAt) {
 
 async function loadSnapshotBundle(env) {
   const capturedAt = minuteBucket();
+  const cfg = config(env);
+  const hotVoteTask = cfg.hotVoteCollectionEnabled
+    ? loadHotVoteState(env, capturedAt)
+    : Promise.resolve(null);
   const [campaign, hotVote] = await Promise.allSettled([
     loadMgtvState(env, capturedAt),
-    loadHotVoteState(env, capturedAt),
+    hotVoteTask,
   ]);
-  if (campaign.status === "rejected" && hotVote.status === "rejected") {
-    throw new Error(`all_sources_failed: ${campaign.reason.message}; ${hotVote.reason.message}`);
+  if (campaign.status === "rejected" && (!cfg.hotVoteCollectionEnabled || hotVote.status === "rejected")) {
+    const hotVoteError = cfg.hotVoteCollectionEnabled ? `; ${hotVote.reason.message}` : "; hot_vote_collection_disabled";
+    throw new Error(`all_sources_failed: ${campaign.reason.message}${hotVoteError}`);
   }
   const state = {
     updatedAt: capturedAt,
@@ -382,6 +388,7 @@ async function collectAndStore(env) {
     hotVoteCount: state.hotVote && state.hotVote.periods[0] ? state.hotVote.periods[0].rows.length : 0,
     errors: state.errors,
     rowCount: statements.length,
+    hotVoteCollectionEnabled: config(env).hotVoteCollectionEnabled,
   };
 }
 
