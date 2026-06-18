@@ -14,7 +14,7 @@ const TARGET_NAME = process.env.WEIBO_STAGE_TARGET_NAME || "曾沛慈";
 const PERIOD_ID = Number(process.env.WEIBO_STAGE_PERIOD_ID || 20260618);
 const PERIOD_LABEL = process.env.WEIBO_STAGE_PERIOD_LABEL || "五公舞台推荐";
 const MAX_SNAPSHOTS = Number(process.env.WEIBO_STAGE_MAX_SNAPSHOTS || 10080);
-const INTERVAL_MS = Number(process.env.WEIBO_STAGE_INTERVAL_MS || 60000);
+const INTERVAL_MS = Number(process.env.WEIBO_STAGE_INTERVAL_MS || 300000);
 
 function readText(file) {
   try {
@@ -364,7 +364,7 @@ async function main() {
   console.log([
     "Usage:",
     "  npm run weibo:ios:collect  # 从连接的 iPhone 截图 OCR 采集一次",
-    "  npm run weibo:ios:watch    # 每分钟循环采集",
+    "  npm run weibo:ios:watch    # 每 5 分钟循环采集",
     "",
     "Setup:",
     "  brew install libimobiledevice tesseract tesseract-lang",

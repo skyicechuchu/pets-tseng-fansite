@@ -162,7 +162,7 @@ WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_T
 ```
 本地电脑
   ├─ Playwright 使用 .auth/weibo-stage-profile 登录态
-  ├─ 每分钟打开微博活动页，读取推荐值
+  ├─ 每 5 分钟打开微博活动页，读取推荐值
   ├─ 写入 data/weibo-stage-history.json 作为本地兜底
   └─ POST 到 Worker /admin/weibo/ingest
 
@@ -184,7 +184,7 @@ npm run weibo:login
 WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:collect
 ```
 
-持续每分钟采集：
+持续每 5 分钟采集：
 
 ```bash
 WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:watch
@@ -201,7 +201,7 @@ python3 -m http.server 8099
 常用环境变量：
 
 - `WEIBO_STAGE_HEADLESS=0`：显示浏览器窗口，方便观察是否真的进入榜单。
-- `WEIBO_STAGE_INTERVAL_MS=60000`：调整采集间隔。
+- `WEIBO_STAGE_INTERVAL_MS=300000`：调整采集间隔，默认 5 分钟。
 - `WEIBO_LOGIN_URL=...`：替换登录入口；默认是微博网页版。
 - `WEIBO_STAGE_URL=...`：替换微博活动页入口。
 - `WEIBO_STAGE_WORKER_API_BASE=...`：覆盖默认 Worker 地址。
@@ -226,7 +226,7 @@ brew install libimobiledevice tesseract tesseract-lang
 WEIBO_STAGE_COLLECTION_ENABLED=true npm run weibo:ios:collect
 ```
 
-4. 持续每分钟采集并上传 Worker：
+4. 持续每 5 分钟采集并上传 Worker：
 
 ```bash
 WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:ios:watch
@@ -278,7 +278,7 @@ npm run weibo:android:prepare
 WEIBO_STAGE_COLLECTION_ENABLED=true npm run weibo:android:collect
 ```
 
-持续每分钟采集并上传 Worker：
+持续每 5 分钟采集并上传 Worker：
 
 ```bash
 WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:android:watch

@@ -158,7 +158,7 @@ const SITE = {
       collectionEnabled: true,
       sourceUrl: "https://m.weibo.cn/c/wbox?id=l331zrkexk&cid=1334",
       historyUrl: "data/weibo-stage-history.json",
-      refreshMs: 60000,
+      refreshMs: 300000,
     },
   },
 

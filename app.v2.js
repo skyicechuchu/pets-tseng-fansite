@@ -366,6 +366,7 @@ let monitorHashAligned = false;
 let monitorHistorySource = "local";
 let monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
 let monitorRetryTimer = null;
+let monitorRefreshTimer = null;
 let monitorAutoRetryCount = 0;
 let monitorRenderToken = 0;
 let monitorWindowMode = "today";
@@ -417,10 +418,12 @@ const MONITOR_DATASETS = {
     localConfigKey: "weiboStage",
     localHistoryUrlKey: "historyUrl",
     valueLabel: "作品",
-    yAxisLabel: "新增推荐值",
+    yAxisLabel: "新增推荐值（万）",
     sourceLabel: "微博推荐页",
     sourceConfigKey: "weiboStage",
     sourceUrlKey: "sourceUrl",
+    displayScale: 10000,
+    displayUnit: "万",
   },
   stage: {
     key: "stage",
@@ -437,6 +440,26 @@ const MONITOR_DATASETS = {
 
 function monitorDatasetConfig() {
   return MONITOR_DATASETS[monitorDataKind] || MONITOR_DATASETS.hot;
+}
+function monitorRefreshMs(c, dataset) {
+  if (dataset && dataset.sourceConfigKey && c && c[dataset.sourceConfigKey]) {
+    return Number(c[dataset.sourceConfigKey].refreshMs || 0);
+  }
+  if (dataset && dataset.localConfigKey && c && c[dataset.localConfigKey]) {
+    return Number(c[dataset.localConfigKey].refreshMs || 0);
+  }
+  return Number(c && c.mgtv && c.mgtv.refreshMs || 0);
+}
+function scheduleMonitorRefresh(c, dataset) {
+  clearInterval(monitorRefreshTimer);
+  monitorRefreshTimer = null;
+  if (new URLSearchParams(window.location.search).get("noAutoRefresh") === "1") return;
+  const ms = monitorRefreshMs(c, dataset);
+  if (ms > 0) {
+    monitorRefreshTimer = setInterval(() => {
+      renderMonitor().catch(err => console.error("renderMonitor auto refresh", err));
+    }, ms);
+  }
 }
 
 function monitorDatasetConfigObject(c, dataset) {
@@ -493,6 +516,24 @@ function renderCollectionStatus(c) {
 
 function fmtInt(n) {
   return Number(n || 0).toLocaleString("zh-CN");
+}
+function fmtWan(n) {
+  const value = Number(n || 0) / 10000;
+  return `${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 万`;
+}
+function monitorDisplayValue(dataset, value) {
+  if (dataset && dataset.displayScale) return fmtWan(value);
+  return fmtInt(value);
+}
+function monitorChartValue(dataset, value) {
+  if (dataset && dataset.displayScale) return Number(value || 0) / dataset.displayScale;
+  return Number(value || 0);
+}
+function monitorAxisTick(dataset, value) {
+  if (dataset && dataset.displayScale) {
+    return `${Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}万`;
+  }
+  return fmtInt(value);
 }
 function fmtPct(value, total) {
   if (!total) return 0;
@@ -1837,7 +1878,7 @@ async function renderMonitor(options) {
   const stats = [
     { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
     { label: "当前时间窗", value: formatMonitorDuration(windowInfo.spanMs), note: formatMonitorRange(windowInfo.startTs, windowInfo.endTs) },
-    { label: "窗口新增", value: fmtInt(summary.total), note: summary.top && summary.top.value ? `最高：${summary.top.row.title}` : "暂无新增" },
+    { label: "窗口新增", value: monitorDisplayValue(dataset, summary.total), note: summary.top && summary.top.value ? `最高：${summary.top.row.title}` : "暂无新增" },
     { label: "合并粒度", value: formatMonitorDuration(windowInfo.bucketMs), note: `${buckets.length} 个时间点 · ${summary.activeCount} 个${dataset.valueLabel}有新增` },
   ].map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
@@ -1887,6 +1928,7 @@ async function renderMonitor(options) {
 
   attachMonitorHandlers(c, periodHistory);
   drawMonitorCharts(history, selected.periodId, metrics, windowInfo, buckets, visibleRows);
+  scheduleMonitorRefresh(c, dataset);
   alignMonitorHash();
 }
 function attachMonitorHandlers(c, history) {
@@ -2008,7 +2050,7 @@ function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visi
         const color = monitorSeriesColor(row, index);
         return {
           label: row.title,
-          data: buckets.length ? buckets.map(bucket => bucket.deltas.get(row.key) || 0) : [0],
+          data: buckets.length ? buckets.map(bucket => monitorChartValue(dataset, bucket.deltas.get(row.key) || 0)) : [0],
           borderColor: color,
           backgroundColor: hexToRgba(color, 0.08),
           tension: 0.25,
@@ -2023,7 +2065,7 @@ function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visi
           beginAtZero: true,
           grid: { color: "#fde8e8" },
           title: { display: true, text: dataset.yAxisLabel },
-          ticks: { callback: value => fmtInt(value) },
+          ticks: { callback: value => monitorAxisTick(dataset, value) },
         },
         x: {
           grid: { display: false },

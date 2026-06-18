@@ -30,7 +30,7 @@ const TARGET_NAME = process.env.WEIBO_STAGE_TARGET_NAME || "曾沛慈";
 const PERIOD_ID = Number(process.env.WEIBO_STAGE_PERIOD_ID || 20260618);
 const PERIOD_LABEL = process.env.WEIBO_STAGE_PERIOD_LABEL || "五公舞台推荐";
 const MAX_SNAPSHOTS = Number(process.env.WEIBO_STAGE_MAX_SNAPSHOTS || 10080);
-const INTERVAL_MS = Number(process.env.WEIBO_STAGE_INTERVAL_MS || 60000);
+const INTERVAL_MS = Number(process.env.WEIBO_STAGE_INTERVAL_MS || 300000);
 const ADB_SERIAL = process.env.ADB_SERIAL || "";
 const SCROLL_PAGES = Math.max(1, Number(process.env.WEIBO_ANDROID_SCROLL_PAGES || 3));
 const SCROLL_SETTLE_MS = Math.max(300, Number(process.env.WEIBO_ANDROID_SCROLL_SETTLE_MS || 1200));
@@ -604,7 +604,7 @@ async function main() {
     "Usage:",
     "  npm run weibo:android:open     # 在 Android 微博 App 打开活动页",
     "  npm run weibo:android:collect  # 从模拟器截图 OCR 采集一次",
-    "  npm run weibo:android:watch    # 每分钟循环采集",
+    "  npm run weibo:android:watch    # 每 5 分钟循环采集",
     "",
     "Setup:",
     "  brew install android-platform-tools android-commandlinetools openjdk tesseract tesseract-lang",

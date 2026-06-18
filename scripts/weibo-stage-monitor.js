@@ -17,7 +17,7 @@ const TARGET_NAME = process.env.WEIBO_STAGE_TARGET_NAME || "曾沛慈";
 const PERIOD_ID = Number(process.env.WEIBO_STAGE_PERIOD_ID || 20260618);
 const PERIOD_LABEL = process.env.WEIBO_STAGE_PERIOD_LABEL || "五公舞台推荐";
 const MAX_SNAPSHOTS = Number(process.env.WEIBO_STAGE_MAX_SNAPSHOTS || 10080);
-const INTERVAL_MS = Number(process.env.WEIBO_STAGE_INTERVAL_MS || 60000);
+const INTERVAL_MS = Number(process.env.WEIBO_STAGE_INTERVAL_MS || 300000);
 const PAGE_WAIT_MS = Number(process.env.WEIBO_STAGE_PAGE_WAIT_MS || 15000);
 
 function readDefaultWorkerBase() {
@@ -540,14 +540,14 @@ async function main() {
     "Usage:",
     "  npm run weibo:login    # 打开浏览器，手动登录微博",
     "  npm run weibo:collect  # 采集一次并写入 data/weibo-stage-history.json",
-    "  npm run weibo:watch    # 每分钟循环采集",
+    "  npm run weibo:watch    # 每 5 分钟循环采集",
     "",
     "Env:",
     "  WEIBO_STAGE_COLLECT_TOKEN=<Cloudflare COLLECT_TOKEN>",
     "  WEIBO_STAGE_COLLECTION_ENABLED=true",
     "  WEIBO_LOGIN_URL=https://weibo.com/?topnav=1&mod=logo",
     "  WEIBO_STAGE_HEADLESS=0",
-    "  WEIBO_STAGE_INTERVAL_MS=60000",
+    "  WEIBO_STAGE_INTERVAL_MS=300000",
   ].join("\n"));
 }
 
