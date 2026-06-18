@@ -119,6 +119,172 @@ curl "http://localhost:8787/cdn-cgi/handler/scheduled?format=json"
 - `GET /health`：查看 D1 里有多少快照、最近一次采样时间。
 - `GET /latest`：返回最新完整榜单状态。
 - `GET /history?limit=720`：返回最近 720 个快照，用于监控页趋势和异常分析。
+- `GET /weibo/latest`：返回本地脚本上传的最新微博舞台推荐榜单。
+- `GET /weibo/history?limit=720`：返回微博舞台推荐时间序列。
+
+## 采集开关
+
+三个数据源可以分别开关，页面会在 `数据看板` 和 `数据监控` 顶部显示当前状态：
+
+| 页面名称 | 前端显示配置 | Worker / 脚本开关 | 说明 |
+|---|---|---|---|
+| 姐姐夯值统计 | `mgtv.hotVoteCollectionEnabled` | `HOT_VOTE_COLLECTION_ENABLED` | MGTV 姐姐夯值 Worker 采集 |
+| 公演舞台统计 | `mgtv.stageCollectionEnabled` | `STAGE_COLLECTION_ENABLED` | MGTV 舞台助力 Worker 采集 |
+| 公演舞台限时推荐 | `weiboStage.collectionEnabled` | `WEIBO_STAGE_COLLECTION_ENABLED` | 微博本地脚本采集并上传 Worker |
+
+当前默认都是关闭状态。要开启某一项，不要一次性全开；只改对应项即可。
+
+例如只开启微博舞台推荐：
+
+```js
+// data.v2.js
+weiboStage: {
+  collectionEnabled: true,
+}
+```
+
+同时部署 Worker 时把对应变量设为：
+
+```toml
+WEIBO_STAGE_COLLECTION_ENABLED = "true"
+```
+
+本地脚本也可以临时覆盖：
+
+```bash
+WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:watch
+```
+
+## 微博舞台推荐本地监控
+
+微博 WBox 活动页需要登录态，登录 cookie 不适合放到 Cloudflare Worker。这里采用 **本地 Playwright 采集 + Worker 入库**：
+
+```
+本地电脑
+  ├─ Playwright 使用 .auth/weibo-stage-profile 登录态
+  ├─ 每分钟打开微博活动页，读取推荐值
+  ├─ 写入 data/weibo-stage-history.json 作为本地兜底
+  └─ POST 到 Worker /admin/weibo/ingest
+
+GitHub Pages
+  └─ 数据监控页读取 /weibo/history
+```
+
+首次登录：
+
+```bash
+npm run weibo:login
+```
+
+浏览器会打开微博网页版 `https://weibo.com/?topnav=1&mod=logo`。自己完成登录即可，登录资料会保存在 `.auth/`，已加入 `.gitignore`。采集时仍会打开活动页 `WEIBO_STAGE_URL`。
+
+采集一次：
+
+```bash
+WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:collect
+```
+
+持续每分钟采集：
+
+```bash
+WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:watch
+```
+
+如果想先只在本地看效果，不上传 Worker，也可以不设置 token；脚本会只更新 `data/weibo-stage-history.json`。这时请用本地 HTTP server 打开页面：
+
+```bash
+python3 -m http.server 8099
+```
+
+然后访问 `http://localhost:8099/#monitor`。不要用 `file://` 直接打开，因为浏览器通常会拦截本地 JSON 的 `fetch`。
+
+常用环境变量：
+
+- `WEIBO_STAGE_HEADLESS=0`：显示浏览器窗口，方便观察是否真的进入榜单。
+- `WEIBO_STAGE_INTERVAL_MS=60000`：调整采集间隔。
+- `WEIBO_LOGIN_URL=...`：替换登录入口；默认是微博网页版。
+- `WEIBO_STAGE_URL=...`：替换微博活动页入口。
+- `WEIBO_STAGE_WORKER_API_BASE=...`：覆盖默认 Worker 地址。
+
+### iPhone App 客户端采集
+
+如果活动只能在微博 App 客户端里打开，使用 iPhone OCR 采集器。它不会控制你的手机点击，只负责从已连接的 iPhone 截屏、OCR、解析推荐值，并写入同一份 `data/weibo-stage-history.json` / Worker。
+
+首次安装系统工具：
+
+```bash
+brew install libimobiledevice tesseract tesseract-lang
+```
+
+使用步骤：
+
+1. 用 USB 连接 iPhone，手机上点 Trust。
+2. 在 iPhone 微博 App 里打开活动榜单页，并保持手机解锁、屏幕停在榜单上。
+3. 采集一次：
+
+```bash
+WEIBO_STAGE_COLLECTION_ENABLED=true npm run weibo:ios:collect
+```
+
+4. 持续每分钟采集并上传 Worker：
+
+```bash
+WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:ios:watch
+```
+
+调试截图/OCR 会放在 `tmp/weibo-ios/`。如果想先用一张截图测试解析：
+
+```bash
+WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_IOS_SCREENSHOT_PATH="/path/to/screenshot.png" npm run weibo:ios:collect
+```
+
+### Android 模拟器采集
+
+如果不想用 iPhone，可以用 Android 模拟器当作“虚拟手机”。本机已配置的默认 AVD 名称是 `WeiboMonitor`。
+
+首次准备：
+
+```bash
+brew install android-platform-tools android-commandlinetools openjdk tesseract tesseract-lang
+```
+
+检查当前 Android 环境：
+
+```bash
+npm run weibo:android:doctor
+```
+
+启动并调优模拟器：
+
+```bash
+npm run weibo:android:start
+```
+
+启动后，在模拟器里安装并登录微博 App。可以用 Google Play 安装，也可以自己下载微博 APK 后：
+
+```bash
+adb install /path/to/weibo.apk
+```
+
+启动模拟器并打开活动页：
+
+```bash
+npm run weibo:android:prepare
+```
+
+采集一次：
+
+```bash
+WEIBO_STAGE_COLLECTION_ENABLED=true npm run weibo:android:collect
+```
+
+持续每分钟采集并上传 Worker：
+
+```bash
+WEIBO_STAGE_COLLECTION_ENABLED=true WEIBO_STAGE_COLLECT_TOKEN="<你的 COLLECT_TOKEN>" npm run weibo:android:watch
+```
+
+如果 `adb devices` 里有多个设备，用 `ADB_SERIAL=emulator-5554` 指定目标。`weibo:android:start` 会自动关闭动画、保持屏幕常亮、停掉 Play Store 后台，并使用较快的网络参数启动 AVD。调试截图/OCR 会放在 `tmp/weibo-android/`。
 
 ## 如何更新内容（只改 data.v2.js）
 

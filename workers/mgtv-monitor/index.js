@@ -34,7 +34,15 @@ async function handleRequest(request, env) {
       return json({
         ok: true,
         service: "pets-mgtv-monitor",
-        endpoints: ["/health", "/latest", "/history?limit=720", "/hot/latest", "/hot/history?limit=720"],
+        endpoints: [
+          "/health",
+          "/latest",
+          "/history?limit=720",
+          "/hot/latest",
+          "/hot/history?limit=720",
+          "/weibo/latest",
+          "/weibo/history?limit=720",
+        ],
       }, cors);
     }
 
@@ -62,9 +70,25 @@ async function handleRequest(request, env) {
       return json(await hotHistory(env, limit, periodId), cors);
     }
 
+    if (request.method === "GET" && url.pathname === "/weibo/latest") {
+      return json(await weiboLatest(env), cors);
+    }
+
+    if (request.method === "GET" && url.pathname === "/weibo/history") {
+      const limit = clampInt(url.searchParams.get("limit"), 2, 1440, 720);
+      const periodId = url.searchParams.get("periodId");
+      return json(await weiboHistory(env, limit, periodId), cors);
+    }
+
     if (request.method === "POST" && url.pathname === "/admin/collect") {
       requireAdmin(request, env);
       const result = await collectAndStore(env);
+      return json({ ok: true, result }, cors);
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/weibo/ingest") {
+      requireAdmin(request, env);
+      const result = await ingestWeiboStage(request, env);
       return json({ ok: true, result }, cors);
     }
 
@@ -80,7 +104,9 @@ function config(env) {
     apiBase: env.MGTV_API_BASE || DEFAULTS.apiBase,
     hotVoteApi: env.MGTV_HOT_VOTE_API || DEFAULTS.hotVoteApi,
     hotVoteSource: env.MGTV_HOT_VOTE_SOURCE || DEFAULTS.hotVoteSource,
+    stageCollectionEnabled: env.STAGE_COLLECTION_ENABLED !== "false",
     hotVoteCollectionEnabled: env.HOT_VOTE_COLLECTION_ENABLED !== "false",
+    weiboStageCollectionEnabled: env.WEIBO_STAGE_COLLECTION_ENABLED !== "false",
     appId: Number(env.MGTV_APP_ID || DEFAULTS.appId),
     platform: env.MGTV_PLATFORM || DEFAULTS.platform,
     targetName: env.MGTV_TARGET_NAME || DEFAULTS.targetName,
@@ -287,24 +313,43 @@ async function loadHotVoteState(env, capturedAt) {
 async function loadSnapshotBundle(env) {
   const capturedAt = minuteBucket();
   const cfg = config(env);
+  const campaignTask = cfg.stageCollectionEnabled
+    ? loadMgtvState(env, capturedAt)
+    : Promise.resolve(null);
   const hotVoteTask = cfg.hotVoteCollectionEnabled
     ? loadHotVoteState(env, capturedAt)
     : Promise.resolve(null);
   const [campaign, hotVote] = await Promise.allSettled([
-    loadMgtvState(env, capturedAt),
+    campaignTask,
     hotVoteTask,
   ]);
-  if (campaign.status === "rejected" && (!cfg.hotVoteCollectionEnabled || hotVote.status === "rejected")) {
-    const hotVoteError = cfg.hotVoteCollectionEnabled ? `; ${hotVote.reason.message}` : "; hot_vote_collection_disabled";
-    throw new Error(`all_sources_failed: ${campaign.reason.message}${hotVoteError}`);
+  const campaignValue = campaign.status === "fulfilled" ? campaign.value : null;
+  const hotVoteValue = hotVote.status === "fulfilled" ? hotVote.value : null;
+  if ((cfg.stageCollectionEnabled || cfg.hotVoteCollectionEnabled) && !campaignValue && !hotVoteValue) {
+    const campaignError = cfg.stageCollectionEnabled && campaign.status === "rejected"
+      ? campaign.reason.message
+      : "stage_collection_disabled";
+    const hotVoteError = cfg.hotVoteCollectionEnabled && hotVote.status === "rejected"
+      ? hotVote.reason.message
+      : "hot_vote_collection_disabled";
+    throw new Error(`all_sources_failed: ${campaignError}; ${hotVoteError}`);
   }
   const state = {
     updatedAt: capturedAt,
-    campaign: campaign.status === "fulfilled" ? campaign.value : null,
-    hotVote: hotVote.status === "fulfilled" ? hotVote.value : null,
+    campaign: campaignValue,
+    hotVote: hotVoteValue,
     errors: {
-      campaign: campaign.status === "rejected" ? campaign.reason.message : null,
-      hotVote: hotVote.status === "rejected" ? hotVote.reason.message : null,
+      campaign: cfg.stageCollectionEnabled
+        ? (campaign.status === "rejected" ? campaign.reason.message : null)
+        : "stage_collection_disabled",
+      hotVote: cfg.hotVoteCollectionEnabled
+        ? (hotVote.status === "rejected" ? hotVote.reason.message : null)
+        : "hot_vote_collection_disabled",
+    },
+    collection: {
+      stage: cfg.stageCollectionEnabled,
+      hotVote: cfg.hotVoteCollectionEnabled,
+      weiboStage: cfg.weiboStageCollectionEnabled,
     },
   };
   if (state.campaign) {
@@ -316,13 +361,14 @@ async function loadSnapshotBundle(env) {
 
 function parseStoredState(rawJson) {
   const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
-  if (parsed && (parsed.campaign || parsed.hotVote)) return parsed;
+  if (parsed && (parsed.campaign || parsed.hotVote || parsed.weiboStage)) return parsed;
   return {
     updatedAt: parsed && parsed.updatedAt,
     currentPeriodId: parsed && parsed.currentPeriodId,
     periods: parsed && parsed.periods,
     campaign: parsed || null,
     hotVote: parsed && parsed.hotVote || null,
+    weiboStage: parsed && parsed.weiboStage || null,
     errors: {},
   };
 }
@@ -335,14 +381,37 @@ function hotVoteState(stored) {
   return stored && stored.hotVote || null;
 }
 
+function weiboStageState(stored) {
+  return stored && stored.weiboStage || null;
+}
+
 async function collectAndStore(env) {
   const state = await loadSnapshotBundle(env);
   const campaign = campaignState(state);
+  const hotVote = hotVoteState(state);
   const capturedAt = state.updatedAt;
   const capturedMs = Date.parse(capturedAt);
   const db = env.DB;
 
-  let row = await db.prepare("SELECT id FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
+  if (!campaign && !hotVote) {
+    return {
+      capturedAt,
+      skipped: true,
+      reason: "all_collection_disabled",
+      collection: state.collection,
+      errors: state.errors,
+    };
+  }
+
+  let row = await db.prepare("SELECT id, raw_json FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
+  if (row && row.raw_json) {
+    try {
+      const existing = parseStoredState(row.raw_json);
+      if (existing.weiboStage && !state.weiboStage) state.weiboStage = existing.weiboStage;
+    } catch (err) {
+      // Existing malformed raw JSON should not block a fresh MGTV snapshot.
+    }
+  }
   if (row) {
     await db.prepare(
       "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
@@ -387,8 +456,11 @@ async function collectAndStore(env) {
     periodCount: campaign ? campaign.periods.length : 0,
     hotVoteCount: state.hotVote && state.hotVote.periods[0] ? state.hotVote.periods[0].rows.length : 0,
     errors: state.errors,
+    collection: state.collection,
     rowCount: statements.length,
+    stageCollectionEnabled: config(env).stageCollectionEnabled,
     hotVoteCollectionEnabled: config(env).hotVoteCollectionEnabled,
+    weiboStageCollectionEnabled: config(env).weiboStageCollectionEnabled,
   };
 }
 
@@ -474,6 +546,165 @@ async function hotHistory(env, limit, periodId) {
   };
 }
 
+async function weiboLatest(env) {
+  const row = await latestRowWithState(env, weiboStageState);
+  return {
+    ok: true,
+    source: "worker",
+    state: weiboStageState(parseStoredState(row.raw_json)),
+    meta: {
+      latestSnapshotId: row.id,
+      capturedAt: row.captured_at,
+      capturedMs: row.captured_ms,
+      currentPeriodId: row.current_period_id,
+    },
+  };
+}
+
+async function weiboHistory(env, limit, periodId) {
+  const rows = await env.DB.prepare(
+    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT ?"
+  ).bind(limit).all();
+  const snapshots = (rows.results || [])
+    .reverse()
+    .map(row => weiboStageState(parseStoredState(row.raw_json)))
+    .filter(Boolean)
+    .map(state => stateToMonitorSnapshot(state, periodId));
+  return {
+    ok: true,
+    source: "worker",
+    snapshots,
+    meta: {
+      count: snapshots.length,
+      limit,
+      periodId: periodId ? Number(periodId) : null,
+    },
+  };
+}
+
+function normalizeWeiboRow(row, index, periodId, periodLabel, targetName) {
+  const title = String(row.title || row.name || row.voteName || "").trim();
+  const guest = String(row.guest || row.song || row.members || "").trim();
+  const interactionValue = Number(
+    row.interactionValue != null ? row.interactionValue :
+      row.recommendValue != null ? row.recommendValue :
+        row.value != null ? row.value :
+          row.voteCount || 0
+  );
+  const coverId = String(row.coverId || row.id || row.key || `${title}:${guest || index + 1}`).trim();
+  return {
+    rank: Number(row.rank || index + 1),
+    title,
+    guest,
+    interactionValue: Number.isFinite(interactionValue) ? interactionValue : 0,
+    roundAmount: Number(row.roundAmount || 0),
+    onScreenCount: Number(row.onScreenCount || 0),
+    cid: row.cid || "",
+    coverId,
+    coverUrl: row.coverUrl || "",
+    isTarget: Boolean(row.isTarget) || `${title} ${guest}`.includes(targetName),
+    key: row.key || `${periodId}:${coverId || `${title}:${index + 1}`}`,
+    periodId,
+    periodLabel,
+  };
+}
+
+function normalizeWeiboStageState(payload, env) {
+  const raw = payload && (payload.state || payload.weiboStage || payload.snapshot || payload);
+  if (!raw) throw httpError("empty_payload", 400);
+  const targetName = env.WEIBO_STAGE_TARGET_NAME || env.MGTV_TARGET_NAME || DEFAULTS.targetName;
+  const updatedAt = minuteBucket(raw.updatedAt || raw.iso || new Date());
+  const currentPeriodId = Number(raw.currentPeriodId || raw.periodId || 20260618);
+
+  if (Array.isArray(raw.periods)) {
+    const periods = raw.periods.map(period => {
+      const periodId = Number(period.periodId || currentPeriodId);
+      const periodLabel = period.periodLabel || period.label || "微博舞台推荐";
+      return Object.assign({}, period, {
+        periodId,
+        periodLabel,
+        targetValueInt: Number(period.targetValueInt || 0),
+        rows: (period.rows || []).map((row, index) =>
+          normalizeWeiboRow(row, index, periodId, periodLabel, targetName)),
+      });
+    });
+    return {
+      updatedAt,
+      currentPeriodId: Number(raw.currentPeriodId || (periods[0] && periods[0].periodId) || currentPeriodId),
+      sourceUrl: raw.sourceUrl || "",
+      periods,
+    };
+  }
+
+  const rows = Array.isArray(raw.rows) ? raw.rows : [];
+  const periodLabel = raw.periodLabel || "微博舞台推荐";
+  return {
+    updatedAt,
+    currentPeriodId,
+    sourceUrl: raw.sourceUrl || "",
+    periods: [{
+      periodId: currentPeriodId,
+      periodLabel,
+      targetValueInt: 0,
+      rows: rows.map((row, index) => normalizeWeiboRow(row, index, currentPeriodId, periodLabel, targetName)),
+    }],
+  };
+}
+
+async function ingestWeiboStage(request, env) {
+  if (!config(env).weiboStageCollectionEnabled) {
+    throw httpError("weibo_stage_collection_disabled", 409);
+  }
+  const payload = await request.json().catch(() => null);
+  const state = normalizeWeiboStageState(payload, env);
+  const capturedAt = state.updatedAt;
+  const capturedMs = Date.parse(capturedAt);
+  const db = env.DB;
+  let row = await db.prepare(
+    "SELECT id, current_period_id, raw_json FROM snapshots WHERE captured_at = ?"
+  ).bind(capturedAt).first();
+
+  let stored = {
+    updatedAt: capturedAt,
+    campaign: null,
+    hotVote: null,
+    errors: {},
+  };
+  if (row && row.raw_json) {
+    try {
+      stored = parseStoredState(row.raw_json);
+    } catch (err) {
+      stored = Object.assign(stored, { errors: { parse: err.message } });
+    }
+  }
+  stored.updatedAt = capturedAt;
+  stored.weiboStage = state;
+  if (!stored.errors) stored.errors = {};
+  const campaign = campaignState(stored);
+  const currentPeriodId = campaign ? campaign.currentPeriodId : state.currentPeriodId;
+
+  if (row) {
+    await db.prepare(
+      "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
+    ).bind(capturedMs, currentPeriodId, JSON.stringify(stored), row.id).run();
+  } else {
+    await db.prepare(
+      "INSERT INTO snapshots (captured_at, captured_ms, current_period_id, raw_json) VALUES (?, ?, ?, ?)"
+    ).bind(capturedAt, capturedMs, currentPeriodId, JSON.stringify(stored)).run();
+    row = await db.prepare("SELECT id FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
+  }
+  await pruneOldSnapshots(env);
+
+  const rowCount = (state.periods || []).reduce((sum, period) => sum + (period.rows || []).length, 0);
+  return {
+    capturedAt,
+    snapshotId: row && row.id,
+    currentPeriodId: state.currentPeriodId,
+    periodCount: (state.periods || []).length,
+    rowCount,
+  };
+}
+
 async function latestRowWithState(env, pick) {
   const rows = await env.DB.prepare(
     "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT 50"
@@ -484,11 +715,13 @@ async function latestRowWithState(env, pick) {
 }
 
 async function health(env) {
+  const cfg = config(env);
   const latestRow = await env.DB.prepare(
     "SELECT captured_at, captured_ms, current_period_id FROM snapshots ORDER BY captured_ms DESC LIMIT 1"
   ).first();
   const countRow = await env.DB.prepare("SELECT COUNT(*) AS count FROM snapshots").first();
   let latestHot = null;
+  let latestWeibo = null;
   if (latestRow) {
     try {
       const row = await latestRowWithState(env, hotVoteState);
@@ -499,6 +732,15 @@ async function health(env) {
     } catch (err) {
       latestHot = null;
     }
+    try {
+      const row = await latestRowWithState(env, weiboStageState);
+      latestWeibo = {
+        captured_at: row.captured_at,
+        captured_ms: row.captured_ms,
+      };
+    } catch (err) {
+      latestWeibo = null;
+    }
   }
   return {
     ok: true,
@@ -506,6 +748,12 @@ async function health(env) {
     snapshots: Number(countRow && countRow.count || 0),
     latest: latestRow || null,
     hotVote: latestHot,
+    weiboStage: latestWeibo,
+    collection: {
+      stage: cfg.stageCollectionEnabled,
+      hotVote: cfg.hotVoteCollectionEnabled,
+      weiboStage: cfg.weiboStageCollectionEnabled,
+    },
   };
 }
 

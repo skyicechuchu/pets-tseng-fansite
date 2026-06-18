@@ -397,17 +397,6 @@ const MONITOR_WINDOW_OPTIONS = [
   { label: "一周", mode: "7d" },
 ];
 const MONITOR_DATASETS = {
-  stage: {
-    key: "stage",
-    label: "舞台助力",
-    title: "舞台助力增量走势",
-    emptyName: "舞台助力",
-    historyPath: "/history",
-    valueLabel: "作品",
-    yAxisLabel: "新增助力数",
-    sourceLabel: "芒推推页面",
-    sourceUrlKey: "sourceUrl",
-  },
   hot: {
     key: "hot",
     label: "姐姐夯值",
@@ -419,10 +408,87 @@ const MONITOR_DATASETS = {
     sourceLabel: "姐姐夯值页",
     sourceUrlKey: "hotVoteSourceUrl",
   },
+  weibo: {
+    key: "weibo",
+    label: "微博舞台推荐",
+    title: "微博舞台推荐增量走势",
+    emptyName: "微博舞台推荐",
+    historyPath: "/weibo/history",
+    localConfigKey: "weiboStage",
+    localHistoryUrlKey: "historyUrl",
+    valueLabel: "作品",
+    yAxisLabel: "新增推荐值",
+    sourceLabel: "微博推荐页",
+    sourceConfigKey: "weiboStage",
+    sourceUrlKey: "sourceUrl",
+  },
+  stage: {
+    key: "stage",
+    label: "舞台助力",
+    title: "舞台助力增量走势",
+    emptyName: "舞台助力",
+    historyPath: "/history",
+    valueLabel: "作品",
+    yAxisLabel: "新增助力数",
+    sourceLabel: "芒推推页面",
+    sourceUrlKey: "sourceUrl",
+  },
 };
 
 function monitorDatasetConfig() {
   return MONITOR_DATASETS[monitorDataKind] || MONITOR_DATASETS.hot;
+}
+
+function monitorDatasetConfigObject(c, dataset) {
+  return dataset.sourceConfigKey ? c && c[dataset.sourceConfigKey] : c && c.mgtv;
+}
+
+function monitorDatasetSourceUrl(c, dataset) {
+  const cfg = monitorDatasetConfigObject(c, dataset);
+  return cfg && dataset.sourceUrlKey ? cfg[dataset.sourceUrlKey] : "";
+}
+
+function monitorHistorySourceLabel() {
+  if (monitorHistorySource === "worker") return "后台时间序列";
+  if (monitorHistorySource === "local-json") return "本地采集文件";
+  return "自动监控";
+}
+
+function collectionSwitches(c) {
+  const mgtv = c && c.mgtv || {};
+  const weibo = c && c.weiboStage || {};
+  return [
+    {
+      key: "hot",
+      label: "姐姐夯值统计",
+      enabled: mgtv.hotVoteCollectionEnabled === true,
+      note: "Worker",
+    },
+    {
+      key: "stage",
+      label: "公演舞台统计",
+      enabled: mgtv.stageCollectionEnabled === true,
+      note: "Worker",
+    },
+    {
+      key: "weibo",
+      label: "公演舞台限时推荐",
+      enabled: weibo.collectionEnabled === true,
+      note: "本地脚本",
+    },
+  ];
+}
+
+function renderCollectionStatus(c) {
+  const items = collectionSwitches(c).map(item => `
+    <span class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium
+      ${item.enabled ? "border-green-200 bg-green-50 text-green-700" : "border-gray-200 bg-white text-gray-500"}">
+      <span class="h-2 w-2 rounded-full ${item.enabled ? "bg-green-500" : "bg-gray-300"}"></span>
+      <span>${esc(item.label)}</span>
+      <span class="font-bold">${item.enabled ? "采集开" : "采集关"}</span>
+      <span class="${item.enabled ? "text-green-600/70" : "text-gray-400"}">${esc(item.note)}</span>
+    </span>`).join("");
+  return `<div class="mt-5 flex flex-wrap items-center justify-center gap-2">${items}</div>`;
 }
 
 function fmtInt(n) {
@@ -503,6 +569,26 @@ async function fetchMonitorHistoryJson(dataset, mgtv) {
     if (MONITOR_WORKER_HISTORY_LIMIT <= 360) throw err;
     return fetchWorkerJsonWithRetry(dataset.historyPath, { limit: 360, _fallback: Date.now() }, mgtv, 1);
   }
+}
+async function fetchLocalMonitorHistoryJson(dataset, campaign) {
+  const cfg = dataset.localConfigKey ? campaign && campaign[dataset.localConfigKey] : null;
+  const path = cfg && dataset.localHistoryUrlKey ? cfg[dataset.localHistoryUrlKey] : "";
+  if (!path) throw new Error("local_history_not_configured");
+  const url = new URL(path, window.location.href);
+  url.searchParams.set("_", String(Date.now()));
+  const res = await fetch(url.toString(), {
+    headers: { "Accept": "application/json" },
+    cache: "no-store",
+  });
+  const text = await res.text();
+  let json = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch (err) {
+    throw new Error(`本地历史返回非 JSON：${text.slice(0, 80) || err.message}`);
+  }
+  if (!res.ok || json.ok === false) throw new Error(json.error || `本地历史 HTTP ${res.status}`);
+  return Array.isArray(json) ? { ok: true, snapshots: json } : json;
 }
 function hydrateMgtvState(raw, source, meta) {
   const periods = (raw.periods || []).map(period => Object.assign({}, period, {
@@ -632,11 +718,13 @@ function rowSecondaryValue(row) {
   return Number(row && row.roundAmount || 0);
 }
 function renderDashboardLoading(c) {
+  const collectionStatus = renderCollectionStatus(c);
   $("dashboard").innerHTML = `
     <div class="bg-gradient-to-b from-white/60 to-brand-100/40">
       <div class="max-w-6xl mx-auto px-5 py-20 text-center">
         <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-2">${esc(c.title)}</h2>
         <p class="text-gray-500 mb-8">${esc(c.subtitle)}</p>
+        ${collectionStatus}
         <div class="inline-flex items-center gap-3 rounded-full border border-brand-100 bg-white px-5 py-3 text-sm text-brand-600 shadow-sm">
           <span class="inline-block h-2.5 w-2.5 rounded-full bg-brand-500 animate-pulse"></span>
           正在同步芒推推数据
@@ -646,11 +734,13 @@ function renderDashboardLoading(c) {
   alignDashboardHash();
 }
 function renderDashboardError(c, err) {
+  const collectionStatus = renderCollectionStatus(c);
   $("dashboard").innerHTML = `
     <div class="bg-gradient-to-b from-white/60 to-brand-100/40">
       <div class="max-w-6xl mx-auto px-5 py-20 text-center">
         <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-2">${esc(c.title)}</h2>
         <p class="text-gray-500 mb-8">${esc(c.subtitle)}</p>
+        ${collectionStatus}
         <div class="max-w-xl mx-auto rounded-2xl border border-brand-100 bg-white p-6 shadow-sm">
           <p class="font-medium text-gray-800 mb-2">数据暂时读取失败</p>
           <p class="text-sm text-gray-500 mb-5">${esc(err && err.message ? err.message : err)}</p>
@@ -762,6 +852,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState) {
   const staleText = staleError
     ? `<span class="rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-700">保留上次数据</span>`
     : "";
+  const collectionStatus = renderCollectionStatus(c);
   const hotVoteSection = renderHotVoteDashboardSection(c, hotState);
 
   const stats = [
@@ -834,6 +925,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState) {
         <div class="mb-8 flex flex-wrap items-center justify-center gap-4 text-sm">
           ${sourceLink}
         </div>
+        ${collectionStatus}
 
         ${hotVoteSection}
 
@@ -1084,7 +1176,7 @@ function hydrateMonitorSnapshot(snapshot) {
 async function loadMonitorHistoryForDisplay(c) {
   const dataset = monitorDatasetConfig();
   monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
-  if (workerApiBase(c.mgtv)) {
+  if (workerApiBase(c.mgtv) && dataset.historyPath) {
     try {
       const json = await fetchMonitorHistoryJson(dataset, c.mgtv);
       const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
@@ -1093,7 +1185,7 @@ async function loadMonitorHistoryForDisplay(c) {
       monitorAutoRetryCount = 0;
       if (monitorRetryTimer) clearTimeout(monitorRetryTimer);
       monitorRetryTimer = null;
-      return snapshots;
+      if (!dataset.localConfigKey || snapshots.length) return snapshots;
     } catch (e) {
       console.warn("Worker 历史暂时不可用，改用浏览器本地历史", e);
       monitorHistoryStatus = {
@@ -1102,6 +1194,25 @@ async function loadMonitorHistoryForDisplay(c) {
         count: 0,
         error: e && e.message ? e.message : String(e || "未知错误"),
       };
+    }
+  }
+  if (dataset.localConfigKey) {
+    try {
+      const json = await fetchLocalMonitorHistoryJson(dataset, c);
+      const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
+      monitorHistorySource = "local-json";
+      monitorHistoryStatus = { ok: true, source: "local-json", count: snapshots.length, error: "" };
+      return snapshots;
+    } catch (e) {
+      console.warn("本地监控历史暂时不可用", e);
+      monitorHistorySource = "local-json";
+      monitorHistoryStatus = {
+        ok: false,
+        source: "local-json",
+        count: 0,
+        error: e && e.message ? e.message : String(e || "未知错误"),
+      };
+      return [];
     }
   }
   if (dataset.key !== "stage") {
@@ -1494,7 +1605,7 @@ function monitorDatasetTabs(c) {
   return Object.keys(MONITOR_DATASETS).map(key => {
     const item = MONITOR_DATASETS[key];
     const active = item.key === monitorDataKind;
-    const sourceUrl = c.mgtv && c.mgtv[item.sourceUrlKey];
+    const sourceUrl = monitorDatasetSourceUrl(c, item);
     const link = sourceUrl
       ? `<a href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer"
             class="${active ? "text-white/80 hover:text-white" : "text-gray-400 hover:text-brand-600"}"
@@ -1576,6 +1687,7 @@ function scheduleMonitorRetry() {
 }
 function renderMonitorLoading(c) {
   const datasetTabs = monitorDatasetTabs(c);
+  const collectionStatus = renderCollectionStatus(c);
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20 text-center">
@@ -1584,6 +1696,7 @@ function renderMonitorLoading(c) {
         <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
           ${datasetTabs}
         </div>
+        ${collectionStatus}
         <p class="mx-auto mt-5 max-w-2xl text-gray-500">正在连接后台时间序列...</p>
       </div>
     </div>`;
@@ -1592,20 +1705,26 @@ function renderMonitorLoading(c) {
 function renderMonitorEmpty(c, history) {
   const dataset = monitorDatasetConfig();
   const samples = history.length;
-  const hasWorker = Boolean(workerApiBase(c.mgtv));
-  const message = hasWorker && monitorHistoryStatus.ok === false
-    ? "暂时没有连上后台时间序列。这通常是网络、Worker 冷启动、浏览器缓存或页面刚更新时的一次性请求失败；页面会自动重试，也可以手动重新连接。"
-    : hasWorker
-      ? `后台采集器正在建立${dataset.emptyName}时间序列，已返回 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
-      : `正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。`;
+  const hasWorker = Boolean(workerApiBase(c.mgtv)) && !dataset.localConfigKey;
+  const hasError = monitorHistoryStatus.ok === false;
+  const message = hasError && dataset.localConfigKey
+    ? `暂时没有读到${dataset.emptyName}时间序列。先运行本地采集脚本，或部署新版 Worker 后再刷新。`
+    : hasError
+      ? "暂时没有连上后台时间序列。这通常是网络、Worker 冷启动、浏览器缓存或页面刚更新时的一次性请求失败；页面会自动重试，也可以手动重新连接。"
+      : dataset.localConfigKey
+        ? `本地采集器正在建立${dataset.emptyName}时间序列，已返回 ${samples} 个快照。跑满 2-3 分钟后就能看到增量。`
+        : hasWorker
+          ? `后台采集器正在建立${dataset.emptyName}时间序列，已返回 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
+          : `正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。`;
   const datasetTabs = monitorDatasetTabs(c);
-  const retryButton = hasWorker && monitorHistoryStatus.ok === false
+  const collectionStatus = renderCollectionStatus(c);
+  const retryButton = monitorHistoryStatus.ok === false
     ? `<button type="button" data-monitor-retry
           class="mt-5 rounded-full border border-brand-500 bg-brand-500 px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600">
-          重新连接
+          重新读取
         </button>`
     : "";
-  const errorDetail = hasWorker && monitorHistoryStatus.ok === false && monitorHistoryStatus.error
+  const errorDetail = monitorHistoryStatus.ok === false && monitorHistoryStatus.error
     ? `<p class="mx-auto mt-2 max-w-2xl text-xs text-gray-400">错误信息：${esc(monitorHistoryStatus.error)}</p>`
     : "";
   $("monitor").innerHTML = `
@@ -1616,6 +1735,7 @@ function renderMonitorEmpty(c, history) {
         <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
           ${datasetTabs}
         </div>
+        ${collectionStatus}
         <p class="mx-auto mt-3 max-w-2xl text-gray-500">
           ${esc(message)}
         </p>
@@ -1624,7 +1744,7 @@ function renderMonitorEmpty(c, history) {
       </div>
     </div>`;
   attachMonitorHandlers(c, history);
-  if (hasWorker && monitorHistoryStatus.ok === false) scheduleMonitorRetry();
+  if (monitorHistoryStatus.ok === false) scheduleMonitorRetry();
   alignMonitorHash();
 }
 async function renderMonitor(options) {
@@ -1656,10 +1776,11 @@ async function renderMonitor(options) {
   const windowInfo = resolveMonitorWindow(periodHistory);
   const buckets = aggregateMonitorBuckets(intervals, metrics, windowInfo);
   const selectionContext = monitorSelectionContext(dataset.key, selected.periodId);
-  const selectedKeys = dataset.key === "hot"
+  const selectableRows = dataset.key === "hot" || dataset.key === "weibo";
+  const selectedKeys = selectableRows
     ? monitorSelectionKeys(selectionContext, metrics)
     : null;
-  const visibleRows = dataset.key === "hot"
+  const visibleRows = selectableRows
     ? monitorRowsForSelection(metrics, selectedKeys)
     : monitorRowsForWindow(metrics, buckets);
   const summary = monitorWindowSummary(visibleRows, buckets);
@@ -1667,6 +1788,7 @@ async function renderMonitor(options) {
   const first = periodHistory[0];
   const updated = latest ? formatBeijingClock(latest.ts) : "--";
   const datasetTabs = monitorDatasetTabs(c);
+  const collectionStatus = renderCollectionStatus(c);
 
   const periodTabs = periods.length > 1 ? periods.map(p => {
     const active = Number(p.periodId) === Number(selected.periodId);
@@ -1723,7 +1845,7 @@ async function renderMonitor(options) {
       <p class="mt-1 font-display text-3xl text-brand-600">${esc(item.value)}</p>
       <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
     </div>`).join("");
-  const nameSelector = dataset.key === "hot"
+  const nameSelector = selectableRows
     ? renderMonitorNameSelector(metrics, selectedKeys, selectionContext)
     : "";
 
@@ -1731,7 +1853,7 @@ async function renderMonitor(options) {
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
       <div class="max-w-6xl mx-auto px-5 py-20">
         <div class="mb-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
-          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">${monitorHistorySource === "worker" ? "后台时间序列" : "自动监控"}</span>
+          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">${esc(monitorHistorySourceLabel())}</span>
           <span>最近采样 ${esc(updated)} 北京时间</span>
           <span>采样越多，判断越稳</span>
         </div>
@@ -1740,6 +1862,7 @@ async function renderMonitor(options) {
         <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
           ${datasetTabs}
         </div>
+        ${collectionStatus}
 
         ${periodTabs ? `<div class="mt-8 flex flex-wrap items-center justify-center gap-3">${periodTabs}</div>` : ""}
 
@@ -1750,7 +1873,7 @@ async function renderMonitor(options) {
         <div class="mt-8">
           <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
             <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h3 class="font-medium text-gray-800">${esc(dataset.key === "hot" ? dataset.title : `${selected.label}增量走势`)}</h3>
+              <h3 class="font-medium text-gray-800">${esc(dataset.key === "stage" ? `${selected.label}增量走势` : dataset.title)}</h3>
               <p class="text-xs text-gray-400">当前按 ${esc(formatMonitorDuration(windowInfo.bucketMs))} 合并</p>
             </div>
             <div class="relative w-full min-w-0" style="height:420px;">
