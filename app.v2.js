@@ -424,6 +424,7 @@ const MONITOR_DATASETS = {
     sourceUrlKey: "sourceUrl",
     displayScale: 10000,
     displayUnit: "万",
+    highlightTitles: ["心引力", "怎么说我不爱你"],
   },
   stage: {
     key: "stage",
@@ -1665,7 +1666,11 @@ function monitorDatasetTabs(c) {
   }).join("");
 }
 function monitorSeriesColor(row, index) {
-  return row.isTarget ? "#dc2626" : MONITOR_NON_TARGET_COLORS[index % MONITOR_NON_TARGET_COLORS.length];
+  const dataset = monitorDatasetConfig();
+  const highlights = dataset && Array.isArray(dataset.highlightTitles) ? dataset.highlightTitles : [];
+  return row.isTarget || highlights.includes(row.title)
+    ? "#dc2626"
+    : MONITOR_NON_TARGET_COLORS[index % MONITOR_NON_TARGET_COLORS.length];
 }
 function hexToRgba(hex, alpha) {
   const clean = String(hex || "").replace("#", "");
@@ -1683,8 +1688,9 @@ function renderMonitorNameSelector(metrics, selectedKeys, context) {
   const items = rows.map((row, index) => {
     const selected = selectedKeys.has(row.key);
     const color = monitorSeriesColor(row, index);
+    const isHighlighted = color === "#dc2626";
     const style = selected
-      ? `style="border-color:${color};background:${hexToRgba(color, 0.10)};color:${row.isTarget ? "#b91c1c" : "#374151"}"`
+      ? `style="border-color:${color};background:${hexToRgba(color, 0.10)};color:${isHighlighted ? "#b91c1c" : "#374151"}"`
       : "";
     return `
       <button type="button" data-monitor-name-key="${esc(row.key)}" data-monitor-select-context="${esc(context)}"

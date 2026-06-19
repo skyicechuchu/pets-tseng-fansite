@@ -157,7 +157,6 @@ const SITE = {
       targetName: "曾沛慈",
       collectionEnabled: true,
       sourceUrl: "https://m.weibo.cn/c/wbox?id=l331zrkexk&cid=1334",
-      historyUrl: "data/weibo-stage-history.json",
       refreshMs: 300000,
     },
   },
