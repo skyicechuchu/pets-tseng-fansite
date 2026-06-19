@@ -155,7 +155,7 @@ const SITE = {
     },
     weiboStage: {
       targetName: "曾沛慈",
-      collectionEnabled: true,
+      collectionEnabled: false,
       sourceUrl: "https://m.weibo.cn/c/wbox?id=l331zrkexk&cid=1334",
       refreshMs: 300000,
     },

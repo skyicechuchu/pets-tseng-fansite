@@ -444,6 +444,16 @@ const MONITOR_DATASETS = {
 function monitorDatasetConfig() {
   return MONITOR_DATASETS[monitorDataKind] || MONITOR_DATASETS.hot;
 }
+function monitorDatasetEnabled(c, dataset) {
+  if (!dataset) return false;
+  if (dataset.key === "weibo") return Boolean(c && c.weiboStage && c.weiboStage.collectionEnabled === true);
+  return true;
+}
+function enabledMonitorDatasets(c) {
+  return Object.keys(MONITOR_DATASETS)
+    .map(key => MONITOR_DATASETS[key])
+    .filter(dataset => monitorDatasetEnabled(c, dataset));
+}
 function monitorRefreshMs(c, dataset) {
   if (dataset && dataset.sourceConfigKey && c && c[dataset.sourceConfigKey]) {
     return Number(c[dataset.sourceConfigKey].refreshMs || 0);
@@ -500,9 +510,10 @@ function collectionSwitches(c) {
       key: "weibo",
       label: "公演舞台限时推荐",
       enabled: weibo.collectionEnabled === true,
+      visible: weibo.collectionEnabled === true,
       note: "本地脚本",
     },
-  ];
+  ].filter(item => item.visible !== false);
 }
 
 function renderCollectionStatus(c) {
@@ -757,6 +768,7 @@ async function loadHotVoteDashboardData(campaign) {
   }
 }
 async function loadWeiboStageDashboardData(campaign) {
+  if (!campaign || !campaign.weiboStage || campaign.weiboStage.collectionEnabled !== true) return null;
   if (!workerApiBase(campaign.mgtv)) return null;
   try {
     return await loadWorkerWeiboStageDashboardData(campaign);
@@ -1824,8 +1836,7 @@ function latestPeriodId(history) {
   return Number((dashboardState && dashboardState.currentPeriodId) || (latest && latest.currentPeriodId) || 0);
 }
 function monitorDatasetTabs(c) {
-  return Object.keys(MONITOR_DATASETS).map(key => {
-    const item = MONITOR_DATASETS[key];
+  return enabledMonitorDatasets(c).map(item => {
     const active = item.key === monitorDataKind;
     const sourceUrl = monitorDatasetSourceUrl(c, item);
     const link = sourceUrl
@@ -1978,6 +1989,13 @@ async function renderMonitor(options) {
   const opts = options || {};
   const c = SITE.campaign;
   if (!c || !c.mgtv) return;
+  if (!monitorDatasetEnabled(c, monitorDatasetConfig())) {
+    const first = enabledMonitorDatasets(c)[0] || MONITOR_DATASETS.hot;
+    monitorDataKind = first.key;
+    monitorRangeStartTs = null;
+    monitorRangeEndTs = null;
+    monitorWindowMode = "today";
+  }
   const token = ++monitorRenderToken;
   if (opts.showLoading) renderMonitorLoading(c);
   const history = await loadMonitorHistoryForDisplay(c);
