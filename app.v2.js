@@ -180,7 +180,7 @@ function renderAbout() {
 }
 function renderMusic() {
   // 专辑卡 + CD 唱片展示
-  const albums = SITE.albums.map(al => {
+  const albums = SITE.albums.slice().sort((a, b) => Number(b.year || 0) - Number(a.year || 0)).map(al => {
     const coverInner = al.cover
       ? `<img src="${esc(al.cover)}" alt="${esc(al.title)} 封面"
              class="w-full h-full object-cover rounded-lg" loading="lazy">`
