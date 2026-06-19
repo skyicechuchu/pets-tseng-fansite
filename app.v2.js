@@ -99,6 +99,32 @@ function renderHero() {
     }, 5000);
   }
 }
+function renderDirectory() {
+  const items = [
+    { href: "#about", label: "关于" },
+    { href: "#music", label: "音乐" },
+    { href: "#videos", label: "影音" },
+    { href: "#schedule", label: "行程" },
+    { href: "#dashboard", label: "数据看板" },
+    { href: "#monitor", label: "数据监控" },
+  ];
+  $("directory").innerHTML = `
+    <div class="border-y border-brand-100 bg-white">
+      <div class="mx-auto max-w-6xl px-5 py-5">
+        <div class="flex items-center justify-between gap-4">
+          <h2 class="font-display text-xl text-brand-600">页面目录</h2>
+          <span class="hidden text-sm text-gray-400 sm:inline">快速跳转</span>
+        </div>
+        <nav class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="页面目录">
+          ${items.map(item => `
+            <a href="${esc(item.href)}"
+               class="inline-flex min-h-12 items-center justify-center rounded-xl border border-brand-100 bg-brand-50 px-4 text-sm font-bold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-100">
+              ${esc(item.label)}
+            </a>`).join("")}
+        </nav>
+      </div>
+    </div>`;
+}
 function renderAbout() {
   const a = SITE.about;
   const bio = (a.bio || []).map(p => `<p class="mb-4 leading-relaxed">${esc(p)}</p>`).join("");
@@ -2341,6 +2367,7 @@ function initNavHighlight() {
 /* ---------- 入口 ---------- */
 function init() {
   try { renderHero(); } catch (e) { console.error("renderHero", e); }
+  try { renderDirectory(); } catch (e) { console.error("renderDirectory", e); }
   try { renderAbout(); } catch (e) { console.error("renderAbout", e); }
   try { renderMusic(); } catch (e) { console.error("renderMusic", e); }
   try { renderVideos(); } catch (e) { console.error("renderVideos", e); }
