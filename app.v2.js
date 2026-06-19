@@ -353,9 +353,11 @@ function renderSchedule() {
 let dashboardRankChart = null;
 let dashboardStageChart = null;
 let dashboardHotVoteChart = null;
+let dashboardWeiboStageChart = null;
 let dashboardRefreshTimer = null;
 let dashboardState = null;
 let dashboardHotState = null;
+let dashboardWeiboStageState = null;
 let dashboardSelectedPeriodId = null;
 let dashboardHashAligned = false;
 let monitorRateChart = null;
@@ -731,6 +733,10 @@ async function loadWorkerHotVoteDashboardData(campaign) {
   const json = await fetchWorkerJson("/hot/latest", {}, campaign.mgtv);
   return hydrateMgtvState(json.state || {}, "worker", json.meta);
 }
+async function loadWorkerWeiboStageDashboardData(campaign) {
+  const json = await fetchWorkerJson("/weibo/latest", {}, campaign.mgtv);
+  return hydrateMgtvState(json.state || {}, "worker", json.meta);
+}
 async function loadMgtvDashboardData(campaign) {
   if (workerApiBase(campaign.mgtv)) {
     try {
@@ -747,6 +753,15 @@ async function loadHotVoteDashboardData(campaign) {
     return await loadWorkerHotVoteDashboardData(campaign);
   } catch (err) {
     console.warn("姐姐夯值数据暂时不可用", err);
+    return null;
+  }
+}
+async function loadWeiboStageDashboardData(campaign) {
+  if (!workerApiBase(campaign.mgtv)) return null;
+  try {
+    return await loadWorkerWeiboStageDashboardData(campaign);
+  } catch (err) {
+    console.warn("公演舞台限时推荐数据暂时不可用", err);
     return null;
   }
 }
@@ -865,9 +880,108 @@ function renderHotVoteDashboardSection(c, hotState) {
           </div>
         </div>
       </div>
+	    </section>`;
+}
+function weiboStageHighlights() {
+  return MONITOR_DATASETS.weibo.highlightTitles || [];
+}
+function isWeiboStageHighlighted(row) {
+  return weiboStageHighlights().includes(row && row.title);
+}
+function flattenWeiboStageRows(weiboState) {
+  return (weiboState && weiboState.periods || []).flatMap(period =>
+    (period.rows || []).map(row => Object.assign({}, row, {
+      periodId: period.periodId,
+      periodLabel: period.periodLabel,
+    })));
+}
+function renderWeiboStageDashboardSection(c, weiboState) {
+  const cfg = c.weiboStage || {};
+  const periods = weiboState && weiboState.periods || [];
+  const rows = flattenWeiboStageRows(weiboState);
+  if (!periods.length || !rows.length) return "";
+
+  const updated = formatBeijingClock(weiboState.updatedAt);
+  const sourceLink = cfg.sourceUrl
+    ? `<a href="${esc(cfg.sourceUrl)}" target="_blank" rel="noopener noreferrer"
+          class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">微博推荐页 ${ICON.external}</a>`
+    : "";
+  const highlightedRows = rows.filter(isWeiboStageHighlighted);
+  const total = sumRows(rows, "interactionValue");
+  const highlightTotal = sumRows(highlightedRows, "interactionValue");
+
+  const topStats = periods.map(period => {
+    const top = (period.rows || []).slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))[0] || {};
+    return {
+      label: period.periodLabel.replace("五公", "").replace("舞台推荐", "") || period.periodLabel,
+      value: top.title || "--",
+      note: top.interactionValue ? `${fmtWan(top.interactionValue)} · #${top.rank || 1}` : "暂无数据",
+      highlighted: isWeiboStageHighlighted(top),
+    };
+  });
+  const stats = topStats.concat([
+    { label: "重点作品合计", value: fmtWan(highlightTotal), note: `${highlightedRows.map(row => row.title).join(" / ") || "暂无"}`, highlighted: true },
+    { label: "全榜推荐值", value: fmtWan(total), note: `${rows.length} 个作品`, highlighted: false },
+  ]).map(item => `
+    <div class="rounded-xl border ${item.highlighted ? "border-red-100 bg-red-50/60" : "border-brand-100 bg-white"} p-5 shadow-sm">
+      <p class="text-sm ${item.highlighted ? "text-red-500" : "text-gray-500"}">${esc(item.label)}</p>
+      <p class="mt-1 font-display text-2xl ${item.highlighted ? "text-red-600" : "text-brand-600"}">${esc(item.value)}</p>
+      <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
+    </div>`).join("");
+
+  const tableRows = periods.map(period => {
+    const periodRows = (period.rows || []).slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+    return periodRows.map(row => {
+      const highlighted = isWeiboStageHighlighted(row);
+      return `
+        <tr class="${highlighted ? "bg-red-50/80 text-red-800" : ""}">
+          <td class="whitespace-nowrap px-3 py-2 text-gray-500">${esc(period.periodLabel.replace("五公", "").replace("舞台推荐", ""))}</td>
+          <td class="whitespace-nowrap px-3 py-2 font-bold">#${row.rank}</td>
+          <td class="px-3 py-2 font-medium">${esc(row.title)}</td>
+          <td class="px-3 py-2 text-right">${fmtWan(row.interactionValue)}</td>
+        </tr>`;
+    }).join("");
+  }).join("");
+
+  return `
+    <section class="mb-10">
+      <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 class="font-display text-2xl text-brand-600">公演舞台限时推荐统计</h3>
+          <p class="mt-1 text-sm text-gray-500">最近采样 ${esc(updated)} 北京时间 · 每 5 分钟由本地模拟器上传 Worker</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">${sourceLink}</div>
+      </div>
+      <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
+      <div class="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
+        <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+          <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h4 class="font-medium text-gray-800">当前推荐值对比</h4>
+            <p class="text-xs text-gray-400">红色为重点作品</p>
+          </div>
+          <div class="relative w-full min-w-0" style="height:${Math.max(300, rows.length * 34)}px;">
+            <canvas id="weiboStageChart"></canvas>
+          </div>
+        </div>
+        <div class="min-w-0 overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-brand-50 text-xs text-brand-700">
+                <tr>
+                  <th class="px-3 py-2 text-left">类别</th>
+                  <th class="px-3 py-2 text-left">排名</th>
+                  <th class="px-3 py-2 text-left">作品</th>
+                  <th class="px-3 py-2 text-right">推荐值</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </section>`;
 }
-function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState) {
+function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, weiboState) {
   const mgtv = c.mgtv;
   const periods = state.periods || [];
   const selected = periods.find(p => Number(p.periodId) === Number(selectedPeriodId)) || periods[0];
@@ -896,6 +1010,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState) {
     : "";
   const collectionStatus = renderCollectionStatus(c);
   const hotVoteSection = renderHotVoteDashboardSection(c, hotState);
+  const weiboStageSection = renderWeiboStageDashboardSection(c, weiboState);
 
   const stats = [
     { label: "沛慈相关累计助力", value: fmtInt(targetTotal), note: `${targetRows.length} 个舞台作品` },
@@ -970,6 +1085,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState) {
         ${collectionStatus}
 
         ${hotVoteSection}
+        ${weiboStageSection}
 
         <section>
           <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -1023,7 +1139,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState) {
     </div>`;
 
   attachMgtvDashboardHandlers(c, state);
-  drawMgtvCharts(state, selected, hotState);
+  drawMgtvCharts(state, selected, hotState, weiboState);
   alignDashboardHash();
 }
 function alignDashboardHash() {
@@ -1036,12 +1152,13 @@ function alignDashboardHash() {
 }
 function attachMgtvDashboardHandlers(c, state) {
   document.querySelectorAll("[data-period-id]").forEach(btn => {
-    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState));
+    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState, dashboardWeiboStageState));
   });
   const refresh = document.querySelector("[data-mgtv-refresh]");
   if (refresh) refresh.addEventListener("click", () => loadAndRenderMgtvDashboard(c, dashboardSelectedPeriodId));
 }
-function drawMgtvCharts(state, selected, hotState) {
+function drawMgtvCharts(state, selected, hotState, weiboState) {
+  if (dashboardWeiboStageChart) dashboardWeiboStageChart.destroy();
   if (dashboardHotVoteChart) dashboardHotVoteChart.destroy();
   if (dashboardRankChart) dashboardRankChart.destroy();
   if (dashboardStageChart) dashboardStageChart.destroy();
@@ -1078,6 +1195,36 @@ function drawMgtvCharts(state, selected, hotState) {
             grid: { color: "#fde8e8" },
             title: { display: true, text: "夯爆了投送值" },
             ticks: { callback: value => fmtInt(value) },
+          },
+          y: { grid: { display: false } },
+        },
+      }),
+    });
+  }
+
+  const weiboCanvas = $("weiboStageChart");
+  const weiboRows = flattenWeiboStageRows(weiboState)
+    .slice()
+    .sort((a, b) => Number(a.periodId || 0) - Number(b.periodId || 0) || Number(a.rank || 0) - Number(b.rank || 0));
+  if (weiboCanvas && weiboRows.length) {
+    dashboardWeiboStageChart = new Chart(weiboCanvas, {
+      type: "bar",
+      data: {
+        labels: weiboRows.map(row => `${String(row.periodLabel || "").replace("五公", "").replace("舞台推荐", "")} · ${row.title}`),
+        datasets: [{
+          data: weiboRows.map(row => Number(row.interactionValue || 0) / 10000),
+          backgroundColor: weiboRows.map(row => isWeiboStageHighlighted(row) ? "#dc2626" : "#fecaca"),
+          borderRadius: 6,
+        }],
+      },
+      options: Object.assign({}, baseOpts, {
+        indexAxis: "y",
+        scales: {
+          x: {
+            beginAtZero: true,
+            grid: { color: "#fde8e8" },
+            title: { display: true, text: "推荐值（万）" },
+            ticks: { callback: value => `${Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}万` },
           },
           y: { grid: { display: false } },
         },
@@ -1138,19 +1285,21 @@ function scheduleMgtvRefresh(c) {
 async function loadAndRenderMgtvDashboard(c, preferredPeriodId, silent) {
   if (!silent) renderDashboardLoading(c);
   try {
-    const [state, hotState] = await Promise.all([
+    const [state, hotState, weiboStageState] = await Promise.all([
       loadMgtvDashboardData(c),
       loadHotVoteDashboardData(c),
+      loadWeiboStageDashboardData(c),
     ]);
     dashboardState = state;
     dashboardHotState = hotState || dashboardHotState;
+    dashboardWeiboStageState = weiboStageState || dashboardWeiboStageState;
     recordMgtvMonitorSnapshot(state);
     const selected = preferredPeriodId || state.currentPeriodId || (state.periods[0] && state.periods[0].periodId);
-    renderMgtvDashboard(c, state, selected, null, dashboardHotState);
+    renderMgtvDashboard(c, state, selected, null, dashboardHotState, dashboardWeiboStageState);
     scheduleMgtvRefresh(c);
   } catch (err) {
     if (dashboardState && silent) {
-      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState);
+      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState, dashboardWeiboStageState);
     } else {
       renderDashboardError(c, err);
     }
