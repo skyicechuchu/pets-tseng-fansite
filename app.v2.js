@@ -1364,6 +1364,37 @@ function hydrateMonitorSnapshot(snapshot) {
     })),
   });
 }
+function sanitizeMonitorHistory(history) {
+  const snapshots = (history || [])
+    .filter(s => s && s.ts && Array.isArray(s.rows))
+    .slice()
+    .sort((a, b) => a.ts - b.ts)
+    .map(snapshot => Object.assign({}, snapshot, {
+      rows: (snapshot.rows || []).map(row => Object.assign({}, row)),
+    }));
+  const byKey = new Map();
+  snapshots.forEach((snapshot, snapshotIndex) => {
+    (snapshot.rows || []).forEach((row, rowIndex) => {
+      const key = `${row.periodId || ""}:${row.key || row.coverId || row.title || rowIndex}`;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push({ snapshotIndex, rowIndex, value: Number(row.interactionValue || 0) });
+    });
+  });
+  byKey.forEach(entries => {
+    entries.forEach((entry, index) => {
+      if (index === 0 || index === entries.length - 1) return;
+      const prev = entries[index - 1].value;
+      const curr = entry.value;
+      const next = entries[index + 1].value;
+      const looksLikeOneOffSpike = curr > prev && next < curr && next <= Math.max(prev, 0) * 1.1 + 1000;
+      if (!looksLikeOneOffSpike) return;
+      const row = snapshots[entry.snapshotIndex].rows[entry.rowIndex];
+      row.interactionValue = Math.max(prev, next);
+      row.qualityFlag = "corrected_spike";
+    });
+  });
+  return snapshots;
+}
 async function loadMonitorHistoryForDisplay(c) {
   const dataset = monitorDatasetConfig();
   monitorHistoryStatus = { ok: true, source: "local", count: 0, error: "" };
@@ -1376,7 +1407,7 @@ async function loadMonitorHistoryForDisplay(c) {
       monitorAutoRetryCount = 0;
       if (monitorRetryTimer) clearTimeout(monitorRetryTimer);
       monitorRetryTimer = null;
-      if (!dataset.localConfigKey || snapshots.length) return snapshots;
+      if (!dataset.localConfigKey || snapshots.length) return sanitizeMonitorHistory(snapshots);
     } catch (e) {
       console.warn("Worker 历史暂时不可用，改用浏览器本地历史", e);
       monitorHistoryStatus = {
@@ -1393,7 +1424,7 @@ async function loadMonitorHistoryForDisplay(c) {
       const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
       monitorHistorySource = "local-json";
       monitorHistoryStatus = { ok: true, source: "local-json", count: snapshots.length, error: "" };
-      return snapshots;
+      return sanitizeMonitorHistory(snapshots);
     } catch (e) {
       console.warn("本地监控历史暂时不可用", e);
       monitorHistorySource = "local-json";
@@ -1415,7 +1446,7 @@ async function loadMonitorHistoryForDisplay(c) {
   if (monitorHistoryStatus.ok !== false) {
     monitorHistoryStatus = { ok: true, source: "local", count: localHistory.length, error: "" };
   }
-  return localHistory;
+  return sanitizeMonitorHistory(localHistory);
 }
 function snapshotFromMgtvState(state) {
   const rows = [];

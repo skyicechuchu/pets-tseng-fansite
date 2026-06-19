@@ -258,7 +258,18 @@ function rowsFromKnownOrder(text, period) {
   if (!titles.length) return [];
   const values = valueSeriesFromOcr(text);
   if (values.length < titles.length) return [];
-  return titles.map((title, index) => makeOcrRow(title, values[index], period, index)).filter(Boolean);
+  const rows = titles.map((title, index) => makeOcrRow(title, values[index], period, index)).filter(Boolean);
+  return rowsLookRanked(rows) ? rows : [];
+}
+
+function rowsLookRanked(rows) {
+  if (!rows || rows.length < 2) return false;
+  for (let i = 1; i < rows.length; i += 1) {
+    const prev = Number(rows[i - 1].interactionValue || 0);
+    const curr = Number(rows[i].interactionValue || 0);
+    if (curr > prev) return false;
+  }
+  return true;
 }
 
 function extractRowsFromOcr(text, period) {
