@@ -34,12 +34,16 @@ const INTERVAL_MS = Number(process.env.WEIBO_STAGE_INTERVAL_MS || 300000);
 const ADB_SERIAL = process.env.ADB_SERIAL || "";
 const SCROLL_PAGES = Math.max(1, Number(process.env.WEIBO_ANDROID_SCROLL_PAGES || 3));
 const SCROLL_SETTLE_MS = Math.max(300, Number(process.env.WEIBO_ANDROID_SCROLL_SETTLE_MS || 1200));
+const REOPEN_EACH_COLLECT = process.env.WEIBO_ANDROID_REOPEN_EACH_COLLECT !== "false";
+const MIN_ROWS_PER_TAB = Math.max(2, Number(process.env.WEIBO_STAGE_MIN_ROWS_PER_TAB || 5));
+const MIN_POSITIVE_ROWS_PER_TAB = Math.max(1, Number(process.env.WEIBO_STAGE_MIN_POSITIVE_ROWS_PER_TAB || 4));
+const MIN_KNOWN_TITLE_ROWS_PER_TAB = Math.max(1, Number(process.env.WEIBO_STAGE_MIN_KNOWN_TITLE_ROWS_PER_TAB || 4));
 const KNOWN_TITLES = (process.env.WEIBO_STAGE_TITLES || "心引力,那时雨,CAMERA READY,讨厌,1987我不知会遇见你,怎么说我不爱你,猜不透,梦一场,独家记忆,一直很安静")
   .split(",")
   .map(value => value.trim())
   .filter(Boolean);
 const DEFAULT_TAB_TITLES = {
-  group: ["心引力", "那时雨", "CAMERA READY", "讨厌", "1987我不知会遇见你"],
+  group: ["心引力", "CAMERA READY", "那时雨", "讨厌", "1987我不知会遇见你"],
   collab: ["怎么说我不爱你", "猜不透", "梦一场", "独家记忆", "一直很安静"],
 };
 const STAGE_TABS = (process.env.WEIBO_STAGE_TABS || [
@@ -270,6 +274,17 @@ function rowsLookRanked(rows) {
     if (curr > prev) return false;
   }
   return true;
+}
+
+function validateRowsForTab(rows, tab) {
+  const tabName = tab && (tab.tabLabel || tab.key) || "当前 tab";
+  const positiveRows = rows.filter(row => Number(row.interactionValue || 0) > 0).length;
+  const knownTitles = new Set([].concat(KNOWN_TITLES, tab && tab.titles || []));
+  const knownRows = rows.filter(row => knownTitles.has(row.title)).length;
+  if (rows.length < MIN_ROWS_PER_TAB || positiveRows < MIN_POSITIVE_ROWS_PER_TAB || knownRows < MIN_KNOWN_TITLE_ROWS_PER_TAB) {
+    const titles = rows.map(row => `${row.title}:${row.interactionValue}`).join(", ") || "无";
+    throw new Error(`${tabName} OCR 结果不像榜单：识别 ${rows.length} 行，正数 ${positiveRows} 行，已知作品 ${knownRows} 行，内容：${titles}`);
+  }
 }
 
 function extractRowsFromOcr(text, period) {
@@ -544,15 +559,22 @@ async function collectOnce() {
     return { ok: true, skipped: true };
   }
 
+  if (REOPEN_EACH_COLLECT && !process.env.WEIBO_ANDROID_SCREENSHOT_PATH) {
+    openActivity();
+    await sleep(Math.max(3500, SCROLL_SETTLE_MS * 2));
+  }
+
   const periods = [];
   const captures = [];
   for (const tab of STAGE_TABS) {
     const { imagePath, text } = await captureAndOcrList(tab);
     const orderedRows = rowsFromKnownOrder(text, tab);
     const rows = orderedRows.length ? orderedRows : extractRowsFromOcr(text, tab);
-    if (rows.length < 2) {
-      await fs.writeFile(path.join(DEBUG_DIR, "last-error.txt"), `${tab.tabLabel || tab.key} OCR did not find enough vote rows.\n`);
-      throw new Error(`${tab.tabLabel || tab.key} OCR 没有识别到足够的推荐值行。请查看 ${path.relative(ROOT, DEBUG_DIR)}/latest.png 和 last-ocr.txt。`);
+    try {
+      validateRowsForTab(rows, tab);
+    } catch (err) {
+      await fs.writeFile(path.join(DEBUG_DIR, "last-error.txt"), `${err.message}\n\n${text}`);
+      throw new Error(`${err.message}。请查看 ${path.relative(ROOT, DEBUG_DIR)}/latest.png、latest-${tab.key}-page-1.png 和 last-ocr.txt。`);
     }
     periods.push({
       periodId: tab.periodId,
@@ -625,6 +647,9 @@ async function main() {
     "  ADB_SERIAL=emulator-5554",
     "  WEIBO_STAGE_COLLECTION_ENABLED=true",
     "  WEIBO_STAGE_COLLECT_TOKEN=<Cloudflare COLLECT_TOKEN>",
+    "  WEIBO_ANDROID_REOPEN_EACH_COLLECT=true",
+    "  WEIBO_STAGE_MIN_ROWS_PER_TAB=5",
+    "  WEIBO_STAGE_MIN_KNOWN_TITLE_ROWS_PER_TAB=4",
     "  WEIBO_ANDROID_SCREENSHOT_PATH=/path/to/test.png",
   ].join("\n"));
 }
