@@ -104,6 +104,8 @@ const SITE = {
   //   biliSpace: "UID"      -> B站个人主页入口卡（点击跳转该账号空间）
   //   都留空                -> （已无占位卡）
   videos: [
+    { bili: "BV1Chj66wEmX", title: "《心引力》舞台",
+      channel: "曾沛慈 · B站官方", note: "曾沛慈｜《心引力》舞台" },
     { bili: "BV1Ub7D6TEjd", title: "《Susan说》舞台",
       channel: "曾沛慈 · B站官方", note: "曾沛慈｜反复看了20次 Susan 说，我们真的很美" },
     { bili: "BV1z5GH6xExR", title: "《乘风2026》三公帮唱舞台 · 寻「宝莲」",
