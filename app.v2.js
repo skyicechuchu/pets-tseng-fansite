@@ -713,18 +713,36 @@ function normalizeMgtvRow(item, targetName) {
     isTarget: guest.includes(targetName) || title.includes(targetName),
   };
 }
+function stageLabel(period) {
+  const raw = period.stageTag || period.periodName || "";
+  if (raw && raw.includes("舞台")) return raw;
+  if (raw) return `${raw}舞台`;
+  return `period ${period.periodId}`;
+}
+function campaignPeriods(config) {
+  const byId = new Map();
+  const add = period => {
+    if (!period || !period.periodId) return;
+    const periodId = Number(period.periodId);
+    byId.set(periodId, Object.assign({}, byId.get(periodId) || {}, period, { periodId }));
+  };
+  add(config.livePeriod);
+  (config.stageTags || []).forEach(add);
+  add(config.weeklyPeriod);
+  return Array.from(byId.values());
+}
 async function loadLiveMgtvDashboardData(campaign) {
   const mgtv = campaign.mgtv;
   const targetName = mgtv.targetName || "曾沛慈";
   const config = await fetchMgtv("/online/live/campaign/config", mgtvParams({}, mgtv), mgtv);
-  const current = config.weeklyPeriod || {};
-  const stageTags = config.stageTags || [];
-  const periods = await Promise.all(stageTags.map(async tag => {
+  const current = config.livePeriod || config.weeklyPeriod || {};
+  const stagePeriods = campaignPeriods(config);
+  const periods = await Promise.all(stagePeriods.map(async tag => {
     const periodId = Number(tag.periodId);
     const merged = Object.assign({}, tag, periodId === Number(current.periodId) ? current : {});
     merged.periodId = periodId;
-    merged.periodLabel = tag.stageTag || merged.periodName || `period ${periodId}`;
-    merged.targetValueInt = Number(merged.targetValueInt || current.targetValueInt || 0);
+    merged.periodLabel = stageLabel(merged);
+    merged.targetValueInt = Number(merged.targetValueInt || 0);
     const data = await fetchMgtv("/online/live/campaign/list", mgtvParams({ periodId }, mgtv), mgtv);
     merged.rows = (data.list || []).map(row => normalizeMgtvRow(row, targetName));
     return merged;

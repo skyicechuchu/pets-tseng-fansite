@@ -4,13 +4,13 @@ compatibility_date = "2026-06-15"
 workers_dev = true
 
 [triggers]
-crons = []
+crons = ["* * * * *"]
 
 [vars]
 MGTV_API_BASE = "https://hb-mangott.api.mgtv.com"
 MGTV_HOT_VOTE_API = "https://vote.api.mgtv.com/chengfeng/query_vote_list"
 MGTV_HOT_VOTE_SOURCE = "share_cf_zj_2026_cz"
-STAGE_COLLECTION_ENABLED = "false"
+STAGE_COLLECTION_ENABLED = "true"
 HOT_VOTE_COLLECTION_ENABLED = "false"
 WEIBO_STAGE_COLLECTION_ENABLED = "false"
 MGTV_APP_ID = "1"
