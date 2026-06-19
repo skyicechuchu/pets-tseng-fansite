@@ -570,16 +570,45 @@ async function weiboHistory(env, limit, periodId) {
     .map(row => weiboStageState(parseStoredState(row.raw_json)))
     .filter(Boolean)
     .map(state => stateToMonitorSnapshot(state, periodId));
+  const cleaned = sanitizeMonitorSnapshots(snapshots);
   return {
     ok: true,
     source: "worker",
-    snapshots,
+    snapshots: cleaned,
     meta: {
-      count: snapshots.length,
+      count: cleaned.length,
       limit,
       periodId: periodId ? Number(periodId) : null,
     },
   };
+}
+
+function sanitizeMonitorSnapshots(snapshots) {
+  const cloned = (snapshots || []).map(snapshot => Object.assign({}, snapshot, {
+    rows: (snapshot.rows || []).map(row => Object.assign({}, row)),
+  }));
+  const byKey = new Map();
+  cloned.forEach((snapshot, snapshotIndex) => {
+    (snapshot.rows || []).forEach((row, rowIndex) => {
+      const key = `${row.periodId || ""}:${row.key || row.coverId || row.title || rowIndex}`;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push({ snapshotIndex, rowIndex, value: Number(row.interactionValue || 0) });
+    });
+  });
+  byKey.forEach(entries => {
+    entries.forEach((entry, index) => {
+      if (index === 0 || index === entries.length - 1) return;
+      const prev = entries[index - 1].value;
+      const curr = entry.value;
+      const next = entries[index + 1].value;
+      const oneOffSpike = curr > prev && next < curr && next <= Math.max(prev, 0) * 1.1 + 1000;
+      if (!oneOffSpike) return;
+      const row = cloned[entry.snapshotIndex].rows[entry.rowIndex];
+      row.interactionValue = Math.max(prev, next);
+      row.qualityFlag = "corrected_spike";
+    });
+  });
+  return cloned;
 }
 
 function normalizeWeiboRow(row, index, periodId, periodLabel, targetName) {
