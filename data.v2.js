@@ -151,7 +151,7 @@ const SITE = {
       apiBase: "https://hb-mangott.api.mgtv.com",
       workerApiBase: "https://pets-vote-monitor.zhuqiaochu1987.workers.dev",
       stageCollectionEnabled: true,
-      hotVoteCollectionEnabled: false,
+      hotVoteCollectionEnabled: true,
       sourceUrl: "https://app.mgtv.com/h/tuitui/detail3?isHideNavBar=1&isFullScreen=1&mode=sister&cid=859271&code=5b68c720",
       hotVoteSourceUrl: "https://lego.mgtv.com/tpl/event_voter/page/cf_zj_2026.html?source=share_cf_zj_2026_cz",
     },
