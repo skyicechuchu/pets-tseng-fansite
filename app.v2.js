@@ -1214,7 +1214,7 @@ function renderBilibiliDashboardSection(c, biliState) {
   const displayRows = rows.slice(0, BILIBILI_TABLE_LIMIT);
 
   const configMap = bilibiliVideoConfigMap(c);
-  const stackData = buildBilibiliPerformerStacks(displayRows, c);
+  const stackData = buildBilibiliPerformerStacks(rows, c);
   const updated = formatBeijingClock(biliState.updatedAt);
   const cutoffNote = cfg.cutoffNote
     ? `<p class="mt-1 text-xs text-gray-400">${esc(cfg.cutoffNote)}</p>`
@@ -1224,7 +1224,11 @@ function renderBilibiliDashboardSection(c, biliState) {
           class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">B站 ${ICON.external}</a>`
     : "";
   const top = rows[0] || {};
-  const totalView = sumRows(rows, "interactionValue");
+  const topPerformer = (stackData.labels || []).map(name => ({
+    name,
+    total: Array.from((stackData.byPerformer.get(name) || new Map()).values())
+      .reduce((sum, value) => sum + Number(value || 0), 0),
+  }))[0] || null;
   const totalInteract = rows.reduce((sum, row) =>
     sum + Number(row.like || row.roundAmount || 0) + Number(row.favorite || row.onScreenCount || 0) +
       Number(row.coin || 0) + Number(row.share || 0), 0);
@@ -1233,7 +1237,7 @@ function renderBilibiliDashboardSection(c, biliState) {
   const stats = [
     { label: "监控视频", value: `${rows.length} 个`, note: `表格显示播放量前 ${BILIBILI_TABLE_LIMIT}` },
     { label: "当前最高播放", value: fmtCompact(top.interactionValue), note: top.title ? `#${top.rank} ${top.title}` : "暂无" },
-    { label: "总播放量", value: fmtCompact(totalView), note: "全部监控视频合计" },
+    { label: "演出者第一名", value: topPerformer ? topPerformer.name : "--", note: topPerformer ? `总播放量 ${fmtCompact(topPerformer.total)}` : "暂无" },
     { label: "总互动", value: fmtCompact(totalInteract), note: `含沛慈 ${targetCount} 个视频` },
   ].map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
@@ -1282,13 +1286,16 @@ function renderBilibiliDashboardSection(c, biliState) {
       <div class="mb-6 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
         <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h4 class="font-medium text-gray-800">演出者播放量拆分</h4>
-          <p class="text-xs text-gray-400">按播放量 Top 20 舞台堆叠</p>
+          <p class="text-xs text-gray-400">按全部监控舞台堆叠</p>
         </div>
         <div class="relative w-full min-w-0" style="height:${chartHeight}px;">
           <canvas id="bilibiliPerformerChart"></canvas>
         </div>
       </div>
       <div class="overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
+        <div class="border-b border-brand-100 bg-white px-4 py-3 text-xs text-gray-500">
+          表格仅显示当前播放量前 ${BILIBILI_TABLE_LIMIT} 个舞台；上方柱形图统计全部监控舞台。
+        </div>
         <div class="overflow-x-auto">
           <table class="w-full min-w-[58rem] text-sm">
             <thead class="bg-brand-50 text-xs text-brand-700">
@@ -1507,8 +1514,7 @@ function drawMgtvCharts(c, state, selected, hotState, weiboState, biliState) {
   const bilibiliPeriod = biliState && biliState.periods && biliState.periods[0];
   const bilibiliRows = (bilibiliPeriod && bilibiliPeriod.rows || [])
     .slice()
-    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
-    .slice(0, BILIBILI_TABLE_LIMIT);
+    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
   if (bilibiliCanvas && bilibiliRows.length) {
     const stackData = buildBilibiliPerformerStacks(bilibiliRows, c);
     dashboardBilibiliPerformerChart = new Chart(bilibiliCanvas, {
@@ -1528,10 +1534,7 @@ function drawMgtvCharts(c, state, selected, hotState, weiboState, biliState) {
         indexAxis: "y",
         interaction: { mode: "index", axis: "y", intersect: false },
         plugins: {
-          legend: {
-            position: "bottom",
-            labels: { boxWidth: 10, usePointStyle: true },
-          },
+          legend: { display: false },
           tooltip: {
             filter: item => Number(item.raw || 0) > 0,
             callbacks: {

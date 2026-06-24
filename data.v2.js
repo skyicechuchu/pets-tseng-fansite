@@ -166,8 +166,8 @@ const SITE = {
       sourceUrl: "https://www.bilibili.com/",
       refreshMs: 300000,
       minViewCount: 100000,
-      cutoffNote: "截至 2026-06-24，未超过 10 万播放量的视频未纳入监控。",
-      barExcludedPerformers: ["尚雯婕", "萨顶顶", "陈妍希", "何泓姗", "孟佳", "王霏霏"],
+      cutoffNote: "统计口径：仅统计截至 2026-06-24 播放量超过 10 万的视频。",
+      barExcludedPerformers: ["尚雯婕", "萨顶顶", "陈妍希", "何泓姗", "孟佳", "王霏霏", "李斯丹妮", "宋妍霏"],
       videos: [
         { bvid: "BV1nuDgBREJE", title: "一个人想着一个人", performers: ["曾沛慈"] },
         { bvid: "BV1rqQcBqEmk", title: "一半一半", performers: ["曾沛慈", "淡淡", "黄灿灿"] },

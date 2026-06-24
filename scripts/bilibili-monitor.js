@@ -124,10 +124,10 @@ async function collectState(site) {
     else errors.push({ bvid: video.bvid || "", error: result.reason && result.reason.message || String(result.reason) });
   });
   const excluded = minViewCount > 0
-    ? rows.filter(row => Number(row.interactionValue || 0) < minViewCount)
+    ? rows.filter(row => Number(row.interactionValue || 0) <= minViewCount)
     : [];
   const includedRows = minViewCount > 0
-    ? rows.filter(row => Number(row.interactionValue || 0) >= minViewCount)
+    ? rows.filter(row => Number(row.interactionValue || 0) > minViewCount)
     : rows;
   if (!rows.length) {
     throw new Error(`all_bilibili_requests_failed: ${errors.map(item => `${item.bvid}:${item.error}`).join("; ")}`);
