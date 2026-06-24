@@ -443,6 +443,7 @@ const BILIBILI_TABLE_LIMIT = 20;
 const MONITOR_WINDOW_OPTIONS = [
   { label: "今日", mode: "today" },
   { label: "6 小时", mode: "6h" },
+  { label: "12 小时", mode: "12h" },
   { label: "一周", mode: "7d" },
 ];
 const MONITOR_DATASETS = {
