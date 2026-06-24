@@ -695,21 +695,39 @@ async function fetchWorkerJsonWithRetry(path, params, mgtv, retries) {
   }
   throw lastError;
 }
-function monitorHistoryRequestRange() {
+function monitorCustomRequestRange() {
   if (monitorWindowMode === "custom" && Number.isFinite(monitorRangeStartTs) && Number.isFinite(monitorRangeEndTs)) {
     const start = Math.min(monitorRangeStartTs, monitorRangeEndTs);
     const end = Math.max(monitorRangeStartTs, monitorRangeEndTs);
     return { startMs: Math.max(0, start - MONITOR_MIN_RANGE_MS), endMs: end };
   }
+  return null;
+}
+async function monitorHistoryRangeAnchor(dataset, mgtv) {
+  if (!dataset.latestPath) return Date.now();
+  try {
+    const json = await fetchWorkerJsonWithRetry(dataset.latestPath, { _rangeAnchor: Date.now() }, mgtv, 1);
+    const metaTs = Number(json && json.meta && json.meta.capturedMs);
+    const stateTs = Date.parse(json && json.state && json.state.updatedAt || "");
+    if (Number.isFinite(metaTs) && metaTs > 0) return metaTs;
+    if (Number.isFinite(stateTs) && stateTs > 0) return stateTs;
+  } catch (err) {
+    console.warn(`${dataset.emptyName}一周窗口锚点暂时不可用`, err);
+  }
+  return Date.now();
+}
+async function monitorHistoryRequestRange(dataset, mgtv) {
+  const customRange = monitorCustomRequestRange();
+  if (customRange) return customRange;
   if (monitorWindowMode === "7d") {
-    const end = Date.now();
+    const end = await monitorHistoryRangeAnchor(dataset, mgtv);
     return { startMs: Math.max(0, end - monitorWindowMs(monitorWindowMode) - MONITOR_MIN_RANGE_MS), endMs: end };
   }
   return null;
 }
 async function fetchMonitorHistoryJson(dataset, mgtv) {
   const params = { limit: MONITOR_WORKER_HISTORY_LIMIT };
-  const requestRange = monitorHistoryRequestRange();
+  const requestRange = await monitorHistoryRequestRange(dataset, mgtv);
   if (requestRange) {
     params.limit = MONITOR_WORKER_RANGE_HISTORY_LIMIT;
     params.startMs = requestRange.startMs;
@@ -728,7 +746,7 @@ async function fetchMonitorHistoryJson(dataset, mgtv) {
   }
 }
 function monitorSnapshotFitsRequestRange(snapshot) {
-  const range = monitorHistoryRequestRange();
+  const range = monitorCustomRequestRange();
   if (!range || !snapshot || !Number.isFinite(snapshot.ts)) return true;
   return snapshot.ts >= range.startMs && snapshot.ts <= range.endMs;
 }
@@ -2099,6 +2117,11 @@ function normalizeMonitorRange(startTs, endTs, history) {
   return { startTs: start, endTs: end };
 }
 function resolveMonitorWindow(history) {
+  if (monitorWindowMode !== "custom") {
+    const preset = monitorPresetRange(monitorWindowMode, history);
+    monitorRangeStartTs = preset.startTs;
+    monitorRangeEndTs = preset.endTs;
+  }
   if (!monitorRangeStartTs || !monitorRangeEndTs) {
     const preset = monitorPresetRange(monitorWindowMode, history);
     monitorRangeStartTs = preset.startTs;
