@@ -273,6 +273,7 @@ function clampInt(value, min, max, fallback) {
 }
 
 function historyRange(url) {
+  if (!url.searchParams.has("startMs") || !url.searchParams.has("endMs")) return null;
   let startMs = Number(url.searchParams.get("startMs"));
   let endMs = Number(url.searchParams.get("endMs"));
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;

@@ -2678,9 +2678,8 @@ function attachMonitorHandlers(c, history) {
   document.querySelectorAll("[data-monitor-window-mode]").forEach(btn => {
     btn.addEventListener("click", () => {
       monitorWindowMode = btn.dataset.monitorWindowMode || "today";
-      const preset = monitorPresetRange(monitorWindowMode, history || []);
-      monitorRangeStartTs = preset.startTs;
-      monitorRangeEndTs = preset.endTs;
+      monitorRangeStartTs = null;
+      monitorRangeEndTs = null;
       renderMonitor();
     });
   });
