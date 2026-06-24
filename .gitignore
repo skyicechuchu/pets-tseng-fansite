@@ -5,6 +5,8 @@ package-lock.json
 .wrangler/
 .auth/
 .env.local
+.env.bilibili
+tmp/bilibili-monitor*
 tmp/weibo-stage/
 tmp/weibo-ios/
 tmp/weibo-android/

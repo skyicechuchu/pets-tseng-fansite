@@ -384,6 +384,7 @@ let dashboardRefreshTimer = null;
 let dashboardState = null;
 let dashboardHotState = null;
 let dashboardWeiboStageState = null;
+let dashboardBilibiliState = null;
 let dashboardSelectedPeriodId = null;
 let dashboardHashAligned = false;
 let monitorRateChart = null;
@@ -454,6 +455,18 @@ const MONITOR_DATASETS = {
     displayUnit: "万",
     highlightTitles: ["心引力", "怎么说我不爱你"],
   },
+  bilibili: {
+    key: "bilibili",
+    label: "B站播放",
+    title: "B站播放增量走势",
+    emptyName: "B站播放",
+    historyPath: "/bilibili/history",
+    sourceConfigKey: "bilibili",
+    valueLabel: "视频",
+    yAxisLabel: "新增播放量",
+    sourceLabel: "B站",
+    sourceUrlKey: "sourceUrl",
+  },
   stage: {
     key: "stage",
     label: "舞台助力",
@@ -473,6 +486,7 @@ function monitorDatasetConfig() {
 function monitorDatasetEnabled(c, dataset) {
   if (!dataset) return false;
   if (dataset.key === "weibo") return Boolean(c && c.weiboStage && c.weiboStage.collectionEnabled === true);
+  if (dataset.key === "bilibili") return Boolean(c && c.bilibili && c.bilibili.collectionEnabled === true);
   return true;
 }
 function enabledMonitorDatasets(c) {
@@ -539,6 +553,13 @@ function collectionSwitches(c) {
       visible: weibo.collectionEnabled === true,
       note: "本地脚本",
     },
+    {
+      key: "bilibili",
+      label: "B站舞台数据",
+      enabled: c && c.bilibili && c.bilibili.collectionEnabled === true,
+      visible: c && c.bilibili && c.bilibili.collectionEnabled === true,
+      note: "本地脚本",
+    },
   ].filter(item => item.visible !== false);
 }
 
@@ -560,6 +581,13 @@ function fmtInt(n) {
 function fmtWan(n) {
   const value = Number(n || 0) / 10000;
   return `${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 万`;
+}
+function fmtCompact(n) {
+  const value = Number(n || 0);
+  if (Math.abs(value) >= 10000) {
+    return `${(value / 10000).toLocaleString("zh-CN", { maximumFractionDigits: 1 })}万`;
+  }
+  return fmtInt(value);
 }
 function monitorDisplayValue(dataset, value) {
   if (dataset && dataset.displayScale) return fmtWan(value);
@@ -792,6 +820,42 @@ async function loadWorkerWeiboStageDashboardData(campaign) {
   const json = await fetchWorkerJson("/weibo/latest", {}, campaign.mgtv);
   return hydrateMgtvState(json.state || {}, "worker", json.meta);
 }
+function hydrateBilibiliState(raw, source, meta) {
+  const periods = (raw.periods || []).map(period => Object.assign({}, period, {
+    periodId: Number(period.periodId),
+    targetValueInt: Number(period.targetValueInt || 0),
+    rows: (period.rows || []).map(row => Object.assign({}, row, {
+      rank: Number(row.rank || 0),
+      interactionValue: Number(row.interactionValue || 0),
+      roundAmount: Number(row.roundAmount || row.like || 0),
+      onScreenCount: Number(row.onScreenCount || row.favorite || 0),
+      like: Number(row.like || row.roundAmount || 0),
+      favorite: Number(row.favorite || row.onScreenCount || 0),
+      coin: Number(row.coin || 0),
+      share: Number(row.share || 0),
+      danmaku: Number(row.danmaku || 0),
+      reply: Number(row.reply || 0),
+      isTarget: Boolean(row.isTarget),
+    })),
+  }));
+  return {
+    periods,
+    currentPeriodId: Number(raw.currentPeriodId || (periods[0] && periods[0].periodId) || 0),
+    updatedAt: raw.updatedAt ? new Date(raw.updatedAt) : new Date(),
+    source: source || "worker",
+    meta: meta || {},
+  };
+}
+async function loadWorkerBilibiliDashboardData(campaign) {
+  try {
+    const json = await fetchWorkerJson("/bilibili/latest", {}, campaign.mgtv);
+    return hydrateBilibiliState(json.state || {}, "worker", json.meta);
+  } catch (err) {
+    if (!String(err && err.message || "").includes("no_snapshot_yet")) throw err;
+    const json = await fetchWorkerJson("/bilibili/live", {}, campaign.mgtv);
+    return hydrateBilibiliState(json.state || {}, "worker-live", json.meta);
+  }
+}
 async function loadMgtvDashboardData(campaign) {
   if (workerApiBase(campaign.mgtv)) {
     try {
@@ -818,6 +882,16 @@ async function loadWeiboStageDashboardData(campaign) {
     return await loadWorkerWeiboStageDashboardData(campaign);
   } catch (err) {
     console.warn("公演舞台限时推荐数据暂时不可用", err);
+    return null;
+  }
+}
+async function loadBilibiliDashboardData(campaign) {
+  if (!campaign || !campaign.bilibili || campaign.bilibili.collectionEnabled !== true) return null;
+  if (!workerApiBase(campaign.mgtv)) return null;
+  try {
+    return await loadWorkerBilibiliDashboardData(campaign);
+  } catch (err) {
+    console.warn("B站舞台数据暂时不可用", err);
     return null;
   }
 }
@@ -1037,7 +1111,93 @@ function renderWeiboStageDashboardSection(c, weiboState) {
       </div>
     </section>`;
 }
-function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, weiboState) {
+function renderBilibiliDashboardSection(c, biliState) {
+  const cfg = c.bilibili || {};
+  const period = biliState && biliState.periods && biliState.periods[0];
+  const rows = (period && period.rows || []).slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+  if (!rows.length) return "";
+
+  const updated = formatBeijingClock(biliState.updatedAt);
+  const sourceLink = cfg.sourceUrl
+    ? `<a href="${esc(cfg.sourceUrl)}" target="_blank" rel="noopener noreferrer"
+          class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">B站 ${ICON.external}</a>`
+    : "";
+  const top = rows[0] || {};
+  const totalView = sumRows(rows, "interactionValue");
+  const totalInteract = rows.reduce((sum, row) =>
+    sum + Number(row.like || row.roundAmount || 0) + Number(row.favorite || row.onScreenCount || 0) +
+      Number(row.coin || 0) + Number(row.share || 0), 0);
+  const officialCount = rows.filter(row => String(row.owner || row.guest || "").includes("曾沛慈")).length;
+
+  const stats = [
+    { label: "监控视频", value: `${rows.length} 个`, note: `每 ${Math.round((cfg.refreshMs || 300000) / 60000)} 分钟更新` },
+    { label: "当前最高播放", value: fmtCompact(top.interactionValue), note: top.title ? `#${top.rank} ${top.title}` : "暂无" },
+    { label: "总播放量", value: fmtCompact(totalView), note: "当前表格合计" },
+    { label: "总互动", value: fmtCompact(totalInteract), note: `官方账号 ${officialCount} 个视频` },
+  ].map(item => `
+    <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+      <p class="text-sm text-gray-500">${esc(item.label)}</p>
+      <p class="mt-1 font-display text-3xl text-brand-600">${esc(item.value)}</p>
+      <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
+    </div>`).join("");
+
+  const tableRows = rows.map(row => {
+    const url = row.url || (row.bvid ? `https://www.bilibili.com/video/${row.bvid}/` : "");
+    const subtitle = row.biliTitle && row.biliTitle !== row.title
+      ? `<p class="mt-0.5 max-w-[28rem] truncate text-xs text-gray-400">${esc(row.biliTitle)}</p>`
+      : "";
+    return `
+      <tr class="${Number(row.rank || 0) <= 5 ? "bg-brand-50/70" : ""}">
+        <td class="whitespace-nowrap px-3 py-2 font-bold">#${row.rank}</td>
+        <td class="min-w-[14rem] px-3 py-2">
+          <p class="font-medium text-gray-800">${esc(row.title)}</p>
+          ${subtitle}
+        </td>
+        <td class="whitespace-nowrap px-3 py-2 text-gray-500">${esc(row.owner || row.guest || "")}</td>
+        <td class="whitespace-nowrap px-3 py-2 text-right font-semibold text-brand-700">${fmtCompact(row.interactionValue)}</td>
+        <td class="whitespace-nowrap px-3 py-2 text-right">${fmtCompact(row.like || row.roundAmount)}</td>
+        <td class="whitespace-nowrap px-3 py-2 text-right">${fmtCompact(row.favorite || row.onScreenCount)}</td>
+        <td class="whitespace-nowrap px-3 py-2 text-right">${fmtCompact(row.coin)}</td>
+        <td class="whitespace-nowrap px-3 py-2 text-right">${fmtCompact(row.share)}</td>
+        <td class="whitespace-nowrap px-3 py-2 text-right">
+          ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-end gap-1 text-brand-600 hover:text-brand-700">${esc(row.bvid || "打开")} ${ICON.external}</a>` : "--"}
+        </td>
+      </tr>`;
+  }).join("");
+
+  return `
+    <section class="mb-10">
+      <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 class="font-display text-2xl text-brand-600">B站舞台数据</h3>
+          <p class="mt-1 text-sm text-gray-500">最近采样 ${esc(updated)} 北京时间 · 播放、点赞、收藏、投币、转发</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">${sourceLink}</div>
+      </div>
+      <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
+      <div class="overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[58rem] text-sm">
+            <thead class="bg-brand-50 text-xs text-brand-700">
+              <tr>
+                <th class="px-3 py-2 text-left">排名</th>
+                <th class="px-3 py-2 text-left">舞台</th>
+                <th class="px-3 py-2 text-left">UP主</th>
+                <th class="px-3 py-2 text-right">播放</th>
+                <th class="px-3 py-2 text-right">点赞</th>
+                <th class="px-3 py-2 text-right">收藏</th>
+                <th class="px-3 py-2 text-right">投币</th>
+                <th class="px-3 py-2 text-right">转发</th>
+                <th class="px-3 py-2 text-right">链接</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+}
+function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, weiboState, biliState) {
   const mgtv = c.mgtv;
   const periods = state.periods || [];
   const selected = periods.find(p => Number(p.periodId) === Number(selectedPeriodId)) || periods[0];
@@ -1067,6 +1227,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
   const collectionStatus = renderCollectionStatus(c);
   const hotVoteSection = renderHotVoteDashboardSection(c, hotState);
   const weiboStageSection = renderWeiboStageDashboardSection(c, weiboState);
+  const bilibiliSection = renderBilibiliDashboardSection(c, biliState);
 
   const stats = [
     { label: "沛慈相关累计助力", value: fmtInt(targetTotal), note: `${targetRows.length} 个舞台作品` },
@@ -1140,6 +1301,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
         </div>
         ${collectionStatus}
 
+        ${bilibiliSection}
         ${hotVoteSection}
         ${weiboStageSection}
 
@@ -1208,7 +1370,7 @@ function alignDashboardHash() {
 }
 function attachMgtvDashboardHandlers(c, state) {
   document.querySelectorAll("[data-period-id]").forEach(btn => {
-    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState, dashboardWeiboStageState));
+    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState, dashboardWeiboStageState, dashboardBilibiliState));
   });
   const refresh = document.querySelector("[data-mgtv-refresh]");
   if (refresh) refresh.addEventListener("click", () => loadAndRenderMgtvDashboard(c, dashboardSelectedPeriodId));
@@ -1341,21 +1503,23 @@ function scheduleMgtvRefresh(c) {
 async function loadAndRenderMgtvDashboard(c, preferredPeriodId, silent) {
   if (!silent) renderDashboardLoading(c);
   try {
-    const [state, hotState, weiboStageState] = await Promise.all([
+    const [state, hotState, weiboStageState, bilibiliState] = await Promise.all([
       loadMgtvDashboardData(c),
       loadHotVoteDashboardData(c),
       loadWeiboStageDashboardData(c),
+      loadBilibiliDashboardData(c),
     ]);
     dashboardState = state;
     dashboardHotState = hotState || dashboardHotState;
     dashboardWeiboStageState = weiboStageState || dashboardWeiboStageState;
+    dashboardBilibiliState = bilibiliState || dashboardBilibiliState;
     recordMgtvMonitorSnapshot(state);
     const selected = preferredPeriodId || state.currentPeriodId || (state.periods[0] && state.periods[0].periodId);
-    renderMgtvDashboard(c, state, selected, null, dashboardHotState, dashboardWeiboStageState);
+    renderMgtvDashboard(c, state, selected, null, dashboardHotState, dashboardWeiboStageState, dashboardBilibiliState);
     scheduleMgtvRefresh(c);
   } catch (err) {
     if (dashboardState && silent) {
-      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState, dashboardWeiboStageState);
+      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState, dashboardWeiboStageState, dashboardBilibiliState);
     } else {
       renderDashboardError(c, err);
     }
@@ -1416,6 +1580,12 @@ function hydrateMonitorSnapshot(snapshot) {
       onScreenCount: Number(row.onScreenCount || 0),
       hotValue: Number(row.hotValue || 0),
       awkwardValue: Number(row.awkwardValue || 0),
+      like: Number(row.like || row.roundAmount || 0),
+      favorite: Number(row.favorite || row.onScreenCount || 0),
+      coin: Number(row.coin || 0),
+      share: Number(row.share || 0),
+      danmaku: Number(row.danmaku || 0),
+      reply: Number(row.reply || 0),
       isTarget: Boolean(row.isTarget),
     })),
   });
@@ -1903,7 +2073,7 @@ function monitorDatasetTabs(c) {
 function monitorSeriesColor(row, index) {
   const dataset = monitorDatasetConfig();
   const highlights = dataset && Array.isArray(dataset.highlightTitles) ? dataset.highlightTitles : [];
-  return row.isTarget || highlights.includes(row.title)
+  return (dataset.key !== "bilibili" && row.isTarget) || highlights.includes(row.title)
     ? "#dc2626"
     : MONITOR_NON_TARGET_COLORS[index % MONITOR_NON_TARGET_COLORS.length];
 }
@@ -1917,6 +2087,7 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 function renderMonitorNameSelector(metrics, selectedKeys, context) {
+  const dataset = monitorDatasetConfig();
   const rows = metrics.slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
   const allSelected = rows.every(row => selectedKeys.has(row.key));
   const noneSelected = selectedKeys.size === 0;
@@ -1940,7 +2111,7 @@ function renderMonitorNameSelector(metrics, selectedKeys, context) {
     <div class="mt-5 rounded-xl border border-brand-100 bg-white p-4 shadow-sm">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2 text-sm font-medium text-gray-700">
-          <span>名字选择</span>
+          <span>${esc(dataset.valueLabel || "名字")}选择</span>
           <span class="text-xs font-normal text-gray-400">已选择 ${selectedKeys.size}/${rows.length}</span>
         </div>
         <div class="flex items-center gap-2">
@@ -2065,7 +2236,7 @@ async function renderMonitor(options) {
   const windowInfo = resolveMonitorWindow(periodHistory);
   const buckets = aggregateMonitorBuckets(intervals, metrics, windowInfo);
   const selectionContext = monitorSelectionContext(dataset.key, selected.periodId);
-  const selectableRows = dataset.key === "hot" || dataset.key === "weibo";
+  const selectableRows = dataset.key === "hot" || dataset.key === "weibo" || dataset.key === "bilibili";
   const selectedKeys = selectableRows
     ? monitorSelectionKeys(selectionContext, metrics)
     : null;

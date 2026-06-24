@@ -10,6 +10,31 @@ const DEFAULTS = {
 
 const HOT_VOTE_PERIOD_ID = 202606;
 const HOT_VOTE_PERIOD_LABEL = "姐姐夯值";
+const BILIBILI_PERIOD_ID = 20260623;
+const BILIBILI_PERIOD_LABEL = "B站舞台数据";
+const BILIBILI_DEFAULT_REFRESH_MS = 5 * 60 * 1000;
+const DEFAULT_BILIBILI_VIDEOS = [
+  { bvid: "BV1nuDgBREJE", title: "一个人想着一个人", owner: "曾沛慈_TsengPets" },
+  { bvid: "BV1rqQcBqEmk", title: "一半一半", owner: "曾沛慈_TsengPets" },
+  { bvid: "BV1SgZFBfE95", title: "言不由衷", owner: "曾沛慈_TsengPets" },
+  { bvid: "BV1aQDCBNEPz", title: "一半一半练习室", owner: "淡淡Dancey" },
+  { bvid: "BV1usjH6WEoz", title: "怎么说我不爱你", owner: "曾沛慈_TsengPets" },
+  { bvid: "BV1y1GH6NEtY", title: "缘分一道桥", owner: "尚雯婕Laure" },
+  { bvid: "BV1XZGb6uEUz", title: "惊鸿一面", owner: "王濛" },
+  { bvid: "BV1WFjW6EEMQ", title: "独家记忆", owner: "王濛" },
+  { bvid: "BV1owEu6qEqT", title: "搁浅", owner: "叶一茜" },
+  { bvid: "BV1xaG76tEBt", title: "一样的月光", owner: "曾沛慈_TsengPets" },
+  { bvid: "BV1tZGe6yEnZ", title: "第一次爱的人", owner: "曾沛慈_TsengPets" },
+  { bvid: "BV1hio9B2EvU", title: "篇章", owner: "王濛" },
+  { bvid: "BV1j67y6vEWy", title: "普通disco", owner: "王濛" },
+  { bvid: "BV1z5GH6xExR", title: "宝莲", owner: "JIA孟佳" },
+  { bvid: "BV1gvSSBjEEs", title: "恋爱告急", owner: "演员陈瑶" },
+  { bvid: "BV1yUGx6UESo", title: "野心家", owner: "张月ZhangYue" },
+  { bvid: "BV16CoFBGEUD", title: "心愿便利贴", owner: "极锋Jeff" },
+  { bvid: "BV1xDo9BTEnc", title: "我会等", owner: "京剧人侯宇" },
+  { bvid: "BV1tEojBeEbU", title: "bonbon girls", owner: "淡淡Dancey" },
+  { bvid: "BV1Fo9gBYEHc", title: "站在草原望北京", owner: "民族流行歌手乌兰图雅" },
+];
 
 export default {
   async fetch(request, env, ctx) {
@@ -42,6 +67,10 @@ async function handleRequest(request, env) {
           "/hot/history?limit=720",
           "/weibo/latest",
           "/weibo/history?limit=720",
+          "/bilibili/latest",
+          "/bilibili/live",
+          "/bilibili/history?limit=720",
+          "/admin/bilibili/ingest",
         ],
       }, cors);
     }
@@ -80,6 +109,24 @@ async function handleRequest(request, env) {
       return json(await weiboHistory(env, limit, periodId), cors);
     }
 
+    if (request.method === "GET" && url.pathname === "/bilibili/latest") {
+      return json(await bilibiliLatest(env), cors);
+    }
+
+    if (request.method === "GET" && url.pathname === "/bilibili/live") {
+      return json({
+        ok: true,
+        source: "worker-live",
+        state: await loadBilibiliState(env, minuteBucket()),
+      }, cors);
+    }
+
+    if (request.method === "GET" && url.pathname === "/bilibili/history") {
+      const limit = clampInt(url.searchParams.get("limit"), 2, 1440, 720);
+      const periodId = url.searchParams.get("periodId");
+      return json(await bilibiliHistory(env, limit, periodId), cors);
+    }
+
     if (request.method === "POST" && url.pathname === "/admin/collect") {
       requireAdmin(request, env);
       const result = await collectAndStore(env);
@@ -89,6 +136,12 @@ async function handleRequest(request, env) {
     if (request.method === "POST" && url.pathname === "/admin/weibo/ingest") {
       requireAdmin(request, env);
       const result = await ingestWeiboStage(request, env);
+      return json({ ok: true, result }, cors);
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/bilibili/ingest") {
+      requireAdmin(request, env);
+      const result = await ingestBilibili(request, env);
       return json({ ok: true, result }, cors);
     }
 
@@ -107,11 +160,39 @@ function config(env) {
     stageCollectionEnabled: env.STAGE_COLLECTION_ENABLED !== "false",
     hotVoteCollectionEnabled: env.HOT_VOTE_COLLECTION_ENABLED !== "false",
     weiboStageCollectionEnabled: env.WEIBO_STAGE_COLLECTION_ENABLED !== "false",
+    bilibiliCollectionEnabled: env.BILIBILI_COLLECTION_ENABLED !== "false",
+    bilibiliWorkerFetchEnabled: env.BILIBILI_WORKER_FETCH_ENABLED === "true",
+    bilibiliRefreshMs: Number(env.BILIBILI_REFRESH_MS || BILIBILI_DEFAULT_REFRESH_MS),
+    bilibiliVideos: parseBilibiliVideos(env.BILIBILI_VIDEOS),
     appId: Number(env.MGTV_APP_ID || DEFAULTS.appId),
     platform: env.MGTV_PLATFORM || DEFAULTS.platform,
     targetName: env.MGTV_TARGET_NAME || DEFAULTS.targetName,
     retentionDays: Number(env.RETENTION_DAYS || DEFAULTS.retentionDays),
   };
+}
+
+function parseBilibiliVideos(raw) {
+  if (!raw) return DEFAULT_BILIBILI_VIDEOS;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const videos = parsed.map(item => {
+        if (typeof item === "string") return { bvid: item.trim(), title: "" };
+        return {
+          bvid: String(item && (item.bvid || item.bili || "") || "").trim(),
+          title: String(item && item.title || "").trim(),
+          owner: String(item && item.owner || "").trim(),
+        };
+      }).filter(item => /^BV[0-9A-Za-z]{10}$/.test(item.bvid));
+      return videos.length ? videos : DEFAULT_BILIBILI_VIDEOS;
+    }
+  } catch (err) {
+    const videos = String(raw).split(/[,\s]+/)
+      .map(bvid => ({ bvid: bvid.trim(), title: "" }))
+      .filter(item => /^BV[0-9A-Za-z]{10}$/.test(item.bvid));
+    if (videos.length) return videos;
+  }
+  return DEFAULT_BILIBILI_VIDEOS;
 }
 
 function corsHeaders(env) {
@@ -243,6 +324,112 @@ function normalizeHotVoteRow(item, targetName) {
   };
 }
 
+function bilibiliViewUrl(bvid) {
+  const query = new URLSearchParams({ bvid });
+  return `https://api.bilibili.com/x/web-interface/wbi/view?${query.toString()}`;
+}
+
+function bilibiliClassicViewUrl(bvid) {
+  const query = new URLSearchParams({ bvid });
+  return `https://api.bilibili.com/x/web-interface/view?${query.toString()}`;
+}
+
+async function fetchBilibiliJson(url, bvid) {
+  const res = await fetch(url, {
+    headers: {
+      "Accept": "application/json, text/plain, */*",
+      "Referer": `https://www.bilibili.com/video/${bvid}/`,
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+    },
+  });
+  if (!res.ok) throw new Error(`Bilibili HTTP ${res.status}`);
+  const payload = await res.json();
+  if (payload.code !== 0) throw new Error(payload.message || `Bilibili API ${payload.code}`);
+  return payload.data || {};
+}
+
+async function fetchBilibiliVideo(video, cfg, index) {
+  try {
+    const data = await fetchBilibiliJson(bilibiliViewUrl(video.bvid), video.bvid);
+    return normalizeBilibiliRow(data, video, index, cfg.targetName, "view");
+  } catch (err) {
+    const data = await fetchBilibiliJson(bilibiliClassicViewUrl(video.bvid), video.bvid);
+    return normalizeBilibiliRow(data, video, index, cfg.targetName, "classic-view");
+  }
+}
+
+function normalizeBilibiliRow(data, fallback, index, targetName, source) {
+  const stat = data.stat || {};
+  const owner = data.owner || {};
+  const bvid = data.bvid || fallback.bvid;
+  const title = String(fallback.title || data.title || bvid).trim();
+  const biliTitle = String(data.title || title).trim();
+  const ownerName = String(owner.name || "").trim();
+  const haystack = `${title} ${biliTitle} ${ownerName}`;
+  return {
+    rank: index + 1,
+    title,
+    guest: ownerName,
+    interactionValue: Number(stat.view || 0),
+    roundAmount: Number(stat.like || 0),
+    onScreenCount: Number(stat.favorite || 0),
+    cid: String(data.cid || ""),
+    coverId: bvid,
+    coverUrl: data.pic || "",
+    isTarget: haystack.includes(targetName),
+    key: `${BILIBILI_PERIOD_ID}:${bvid}`,
+    periodId: BILIBILI_PERIOD_ID,
+    periodLabel: BILIBILI_PERIOD_LABEL,
+    bvid,
+    url: `https://www.bilibili.com/video/${bvid}/`,
+    biliTitle,
+    owner: ownerName,
+    aid: Number(data.aid || stat.aid || 0),
+    like: Number(stat.like || 0),
+    favorite: Number(stat.favorite || 0),
+    coin: Number(stat.coin || 0),
+    share: Number(stat.share || 0),
+    danmaku: Number(stat.danmaku || 0),
+    reply: Number(stat.reply || 0),
+    statSource: source || "view",
+  };
+}
+
+function shouldCollectBilibili(capturedAt, cfg) {
+  const interval = Math.max(Number(cfg.bilibiliRefreshMs || BILIBILI_DEFAULT_REFRESH_MS), 60 * 1000);
+  return Date.parse(capturedAt) % interval === 0;
+}
+
+async function loadBilibiliState(env, capturedAt) {
+  const cfg = config(env);
+  const results = await Promise.allSettled(
+    (cfg.bilibiliVideos || []).map((video, index) => fetchBilibiliVideo(video, cfg, index))
+  );
+  const rows = [];
+  const errors = [];
+  results.forEach((result, index) => {
+    const video = cfg.bilibiliVideos[index] || {};
+    if (result.status === "fulfilled") rows.push(result.value);
+    else errors.push({ bvid: video.bvid || "", error: result.reason && result.reason.message || String(result.reason) });
+  });
+  if (!rows.length) throw new Error(`bilibili_all_failed: ${errors.map(item => `${item.bvid}:${item.error}`).join("; ")}`);
+  rows.sort((a, b) => b.interactionValue - a.interactionValue || a.title.localeCompare(b.title, "zh-CN"));
+  rows.forEach((row, index) => { row.rank = index + 1; });
+
+  return {
+    updatedAt: capturedAt,
+    currentPeriodId: BILIBILI_PERIOD_ID,
+    sourceUrl: "https://www.bilibili.com/",
+    errors,
+    periods: [{
+      periodId: BILIBILI_PERIOD_ID,
+      periodLabel: BILIBILI_PERIOD_LABEL,
+      targetValueInt: 0,
+      rows,
+    }],
+  };
+}
+
 function normalizeRow(item, targetName) {
   const cover = (item.covers && item.covers[0]) || {};
   const title = cover.coverTitle || item.coverTitle || "";
@@ -333,31 +520,43 @@ async function loadHotVoteState(env, capturedAt) {
 async function loadSnapshotBundle(env) {
   const capturedAt = minuteBucket();
   const cfg = config(env);
+  const collectBilibili = cfg.bilibiliCollectionEnabled && cfg.bilibiliWorkerFetchEnabled && shouldCollectBilibili(capturedAt, cfg);
   const campaignTask = cfg.stageCollectionEnabled
     ? loadMgtvState(env, capturedAt)
     : Promise.resolve(null);
   const hotVoteTask = cfg.hotVoteCollectionEnabled
     ? loadHotVoteState(env, capturedAt)
     : Promise.resolve(null);
-  const [campaign, hotVote] = await Promise.allSettled([
+  const bilibiliTask = collectBilibili
+    ? loadBilibiliState(env, capturedAt)
+    : Promise.resolve(null);
+  const [campaign, hotVote, bilibili] = await Promise.allSettled([
     campaignTask,
     hotVoteTask,
+    bilibiliTask,
   ]);
   const campaignValue = campaign.status === "fulfilled" ? campaign.value : null;
   const hotVoteValue = hotVote.status === "fulfilled" ? hotVote.value : null;
-  if ((cfg.stageCollectionEnabled || cfg.hotVoteCollectionEnabled) && !campaignValue && !hotVoteValue) {
+  const bilibiliValue = bilibili.status === "fulfilled" ? bilibili.value : null;
+  if ((cfg.stageCollectionEnabled || cfg.hotVoteCollectionEnabled || collectBilibili) && !campaignValue && !hotVoteValue && !bilibiliValue) {
     const campaignError = cfg.stageCollectionEnabled && campaign.status === "rejected"
       ? campaign.reason.message
       : "stage_collection_disabled";
     const hotVoteError = cfg.hotVoteCollectionEnabled && hotVote.status === "rejected"
       ? hotVote.reason.message
       : "hot_vote_collection_disabled";
-    throw new Error(`all_sources_failed: ${campaignError}; ${hotVoteError}`);
+    const bilibiliError = collectBilibili && bilibili.status === "rejected"
+      ? bilibili.reason.message
+      : (cfg.bilibiliCollectionEnabled
+        ? (cfg.bilibiliWorkerFetchEnabled ? "bilibili_waiting_next_5m_bucket" : "bilibili_local_ingest_only")
+        : "bilibili_collection_disabled");
+    throw new Error(`all_sources_failed: ${campaignError}; ${hotVoteError}; ${bilibiliError}`);
   }
   const state = {
     updatedAt: capturedAt,
     campaign: campaignValue,
     hotVote: hotVoteValue,
+    bilibili: bilibiliValue,
     errors: {
       campaign: cfg.stageCollectionEnabled
         ? (campaign.status === "rejected" ? campaign.reason.message : null)
@@ -365,11 +564,19 @@ async function loadSnapshotBundle(env) {
       hotVote: cfg.hotVoteCollectionEnabled
         ? (hotVote.status === "rejected" ? hotVote.reason.message : null)
         : "hot_vote_collection_disabled",
+      bilibili: cfg.bilibiliCollectionEnabled
+        ? (collectBilibili
+          ? (bilibili.status === "rejected" ? bilibili.reason.message : null)
+          : (cfg.bilibiliWorkerFetchEnabled ? "bilibili_waiting_next_5m_bucket" : "bilibili_local_ingest_only"))
+        : "bilibili_collection_disabled",
     },
     collection: {
       stage: cfg.stageCollectionEnabled,
       hotVote: cfg.hotVoteCollectionEnabled,
       weiboStage: cfg.weiboStageCollectionEnabled,
+      bilibili: cfg.bilibiliCollectionEnabled,
+      bilibiliDue: collectBilibili,
+      bilibiliWorkerFetch: cfg.bilibiliWorkerFetchEnabled,
     },
   };
   if (state.campaign) {
@@ -381,7 +588,7 @@ async function loadSnapshotBundle(env) {
 
 function parseStoredState(rawJson) {
   const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
-  if (parsed && (parsed.campaign || parsed.hotVote || parsed.weiboStage)) return parsed;
+  if (parsed && (parsed.campaign || parsed.hotVote || parsed.weiboStage || parsed.bilibili)) return parsed;
   return {
     updatedAt: parsed && parsed.updatedAt,
     currentPeriodId: parsed && parsed.currentPeriodId,
@@ -389,6 +596,7 @@ function parseStoredState(rawJson) {
     campaign: parsed || null,
     hotVote: parsed && parsed.hotVote || null,
     weiboStage: parsed && parsed.weiboStage || null,
+    bilibili: parsed && parsed.bilibili || null,
     errors: {},
   };
 }
@@ -405,15 +613,20 @@ function weiboStageState(stored) {
   return stored && stored.weiboStage || null;
 }
 
+function bilibiliState(stored) {
+  return stored && stored.bilibili || null;
+}
+
 async function collectAndStore(env) {
   const state = await loadSnapshotBundle(env);
   const campaign = campaignState(state);
   const hotVote = hotVoteState(state);
+  const bilibili = bilibiliState(state);
   const capturedAt = state.updatedAt;
   const capturedMs = Date.parse(capturedAt);
   const db = env.DB;
 
-  if (!campaign && !hotVote) {
+  if (!campaign && !hotVote && !bilibili) {
     return {
       capturedAt,
       skipped: true,
@@ -428,6 +641,7 @@ async function collectAndStore(env) {
     try {
       const existing = parseStoredState(row.raw_json);
       if (existing.weiboStage && !state.weiboStage) state.weiboStage = existing.weiboStage;
+      if (existing.bilibili && !state.bilibili) state.bilibili = existing.bilibili;
     } catch (err) {
       // Existing malformed raw JSON should not block a fresh MGTV snapshot.
     }
@@ -435,12 +649,12 @@ async function collectAndStore(env) {
   if (row) {
     await db.prepare(
       "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
-    ).bind(capturedMs, campaign ? campaign.currentPeriodId : null, JSON.stringify(state), row.id).run();
+    ).bind(capturedMs, campaign ? campaign.currentPeriodId : (bilibili ? bilibili.currentPeriodId : null), JSON.stringify(state), row.id).run();
     await db.prepare("DELETE FROM snapshot_rows WHERE snapshot_id = ?").bind(row.id).run();
   } else {
     await db.prepare(
       "INSERT INTO snapshots (captured_at, captured_ms, current_period_id, raw_json) VALUES (?, ?, ?, ?)"
-    ).bind(capturedAt, capturedMs, campaign ? campaign.currentPeriodId : null, JSON.stringify(state)).run();
+    ).bind(capturedAt, capturedMs, campaign ? campaign.currentPeriodId : (bilibili ? bilibili.currentPeriodId : null), JSON.stringify(state)).run();
     row = await db.prepare("SELECT id FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
   }
 
@@ -475,12 +689,14 @@ async function collectAndStore(env) {
     currentPeriodId: campaign ? campaign.currentPeriodId : null,
     periodCount: campaign ? campaign.periods.length : 0,
     hotVoteCount: state.hotVote && state.hotVote.periods[0] ? state.hotVote.periods[0].rows.length : 0,
+    bilibiliCount: state.bilibili && state.bilibili.periods[0] ? state.bilibili.periods[0].rows.length : 0,
     errors: state.errors,
     collection: state.collection,
     rowCount: statements.length,
     stageCollectionEnabled: config(env).stageCollectionEnabled,
     hotVoteCollectionEnabled: config(env).hotVoteCollectionEnabled,
     weiboStageCollectionEnabled: config(env).weiboStageCollectionEnabled,
+    bilibiliCollectionEnabled: config(env).bilibiliCollectionEnabled,
   };
 }
 
@@ -597,6 +813,42 @@ async function weiboHistory(env, limit, periodId) {
     snapshots: cleaned,
     meta: {
       count: cleaned.length,
+      limit,
+      periodId: periodId ? Number(periodId) : null,
+    },
+  };
+}
+
+async function bilibiliLatest(env) {
+  const row = await latestRowWithState(env, bilibiliState);
+  return {
+    ok: true,
+    source: "worker",
+    state: bilibiliState(parseStoredState(row.raw_json)),
+    meta: {
+      latestSnapshotId: row.id,
+      capturedAt: row.captured_at,
+      capturedMs: row.captured_ms,
+      currentPeriodId: row.current_period_id,
+    },
+  };
+}
+
+async function bilibiliHistory(env, limit, periodId) {
+  const rows = await env.DB.prepare(
+    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT ?"
+  ).bind(limit).all();
+  const snapshots = (rows.results || [])
+    .reverse()
+    .map(row => bilibiliState(parseStoredState(row.raw_json)))
+    .filter(Boolean)
+    .map(state => stateToMonitorSnapshot(state, periodId));
+  return {
+    ok: true,
+    source: "worker",
+    snapshots,
+    meta: {
+      count: snapshots.length,
       limit,
       periodId: periodId ? Number(periodId) : null,
     },
@@ -754,6 +1006,152 @@ async function ingestWeiboStage(request, env) {
   };
 }
 
+function normalizeBilibiliIngestRow(row, index, periodId, periodLabel, targetName) {
+  const bvid = String(row.bvid || row.coverId || "").trim();
+  const title = String(row.title || row.name || row.biliTitle || bvid || `视频 ${index + 1}`).trim();
+  const biliTitle = String(row.biliTitle || row.rawTitle || title).trim();
+  const owner = String(row.owner || row.guest || "").trim();
+  const interactionValue = Number(
+    row.interactionValue != null ? row.interactionValue :
+      row.view != null ? row.view :
+        row.play || 0
+  );
+  const like = Number(row.like != null ? row.like : row.roundAmount || 0);
+  const favorite = Number(row.favorite != null ? row.favorite : row.onScreenCount || 0);
+  const coin = Number(row.coin || 0);
+  const share = Number(row.share || 0);
+  const haystack = `${title} ${biliTitle} ${owner}`;
+  return {
+    rank: Number(row.rank || index + 1),
+    title,
+    guest: owner,
+    interactionValue: Number.isFinite(interactionValue) ? interactionValue : 0,
+    roundAmount: Number.isFinite(like) ? like : 0,
+    onScreenCount: Number.isFinite(favorite) ? favorite : 0,
+    cid: String(row.cid || ""),
+    coverId: bvid || String(row.key || `${title}:${index + 1}`),
+    coverUrl: row.coverUrl || row.pic || "",
+    isTarget: Boolean(row.isTarget) || haystack.includes(targetName),
+    key: row.key || `${periodId}:${bvid || `${title}:${index + 1}`}`,
+    periodId,
+    periodLabel,
+    bvid,
+    url: row.url || (bvid ? `https://www.bilibili.com/video/${bvid}/` : ""),
+    biliTitle,
+    owner,
+    aid: Number(row.aid || 0),
+    like,
+    favorite,
+    coin,
+    share,
+    danmaku: Number(row.danmaku || 0),
+    reply: Number(row.reply || 0),
+    statSource: row.statSource || "local-ingest",
+  };
+}
+
+function normalizeBilibiliState(payload, env) {
+  const raw = payload && (payload.state || payload.bilibili || payload.snapshot || payload);
+  if (!raw) throw httpError("empty_payload", 400);
+  const targetName = env.MGTV_TARGET_NAME || DEFAULTS.targetName;
+  const updatedAt = minuteBucket(raw.updatedAt || raw.iso || new Date());
+  const currentPeriodId = Number(raw.currentPeriodId || raw.periodId || BILIBILI_PERIOD_ID);
+
+  if (Array.isArray(raw.periods)) {
+    const periods = raw.periods.map(period => {
+      const periodId = Number(period.periodId || currentPeriodId);
+      const periodLabel = period.periodLabel || period.label || BILIBILI_PERIOD_LABEL;
+      const rows = (period.rows || [])
+        .map((row, index) => normalizeBilibiliIngestRow(row, index, periodId, periodLabel, targetName))
+        .sort((a, b) => b.interactionValue - a.interactionValue || a.title.localeCompare(b.title, "zh-CN"));
+      rows.forEach((row, index) => { row.rank = index + 1; });
+      return Object.assign({}, period, {
+        periodId,
+        periodLabel,
+        targetValueInt: Number(period.targetValueInt || 0),
+        rows,
+      });
+    });
+    return {
+      updatedAt,
+      currentPeriodId: Number(raw.currentPeriodId || (periods[0] && periods[0].periodId) || currentPeriodId),
+      sourceUrl: raw.sourceUrl || "https://www.bilibili.com/",
+      periods,
+    };
+  }
+
+  const rows = (raw.rows || [])
+    .map((row, index) => normalizeBilibiliIngestRow(row, index, currentPeriodId, BILIBILI_PERIOD_LABEL, targetName))
+    .sort((a, b) => b.interactionValue - a.interactionValue || a.title.localeCompare(b.title, "zh-CN"));
+  rows.forEach((row, index) => { row.rank = index + 1; });
+  return {
+    updatedAt,
+    currentPeriodId,
+    sourceUrl: raw.sourceUrl || "https://www.bilibili.com/",
+    periods: [{
+      periodId: currentPeriodId,
+      periodLabel: raw.periodLabel || BILIBILI_PERIOD_LABEL,
+      targetValueInt: 0,
+      rows,
+    }],
+  };
+}
+
+async function ingestBilibili(request, env) {
+  if (!config(env).bilibiliCollectionEnabled) {
+    throw httpError("bilibili_collection_disabled", 409);
+  }
+  const payload = await request.json().catch(() => null);
+  const state = normalizeBilibiliState(payload, env);
+  const capturedAt = state.updatedAt;
+  const capturedMs = Date.parse(capturedAt);
+  const db = env.DB;
+  let row = await db.prepare(
+    "SELECT id, current_period_id, raw_json FROM snapshots WHERE captured_at = ?"
+  ).bind(capturedAt).first();
+
+  let stored = {
+    updatedAt: capturedAt,
+    campaign: null,
+    hotVote: null,
+    errors: {},
+  };
+  if (row && row.raw_json) {
+    try {
+      stored = parseStoredState(row.raw_json);
+    } catch (err) {
+      stored = Object.assign(stored, { errors: { parse: err.message } });
+    }
+  }
+  stored.updatedAt = capturedAt;
+  stored.bilibili = state;
+  if (!stored.errors) stored.errors = {};
+  stored.errors.bilibili = null;
+  const campaign = campaignState(stored);
+  const currentPeriodId = campaign ? campaign.currentPeriodId : state.currentPeriodId;
+
+  if (row) {
+    await db.prepare(
+      "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
+    ).bind(capturedMs, currentPeriodId, JSON.stringify(stored), row.id).run();
+  } else {
+    await db.prepare(
+      "INSERT INTO snapshots (captured_at, captured_ms, current_period_id, raw_json) VALUES (?, ?, ?, ?)"
+    ).bind(capturedAt, capturedMs, currentPeriodId, JSON.stringify(stored)).run();
+    row = await db.prepare("SELECT id FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
+  }
+  await pruneOldSnapshots(env);
+
+  const rowCount = (state.periods || []).reduce((sum, period) => sum + (period.rows || []).length, 0);
+  return {
+    capturedAt,
+    snapshotId: row && row.id,
+    currentPeriodId: state.currentPeriodId,
+    periodCount: (state.periods || []).length,
+    rowCount,
+  };
+}
+
 async function latestRowWithState(env, pick) {
   const rows = await env.DB.prepare(
     "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT 50"
@@ -771,6 +1169,7 @@ async function health(env) {
   const countRow = await env.DB.prepare("SELECT COUNT(*) AS count FROM snapshots").first();
   let latestHot = null;
   let latestWeibo = null;
+  let latestBilibili = null;
   if (latestRow) {
     try {
       const row = await latestRowWithState(env, hotVoteState);
@@ -790,6 +1189,15 @@ async function health(env) {
     } catch (err) {
       latestWeibo = null;
     }
+    try {
+      const row = await latestRowWithState(env, bilibiliState);
+      latestBilibili = {
+        captured_at: row.captured_at,
+        captured_ms: row.captured_ms,
+      };
+    } catch (err) {
+      latestBilibili = null;
+    }
   }
   return {
     ok: true,
@@ -798,10 +1206,13 @@ async function health(env) {
     latest: latestRow || null,
     hotVote: latestHot,
     weiboStage: latestWeibo,
+    bilibili: latestBilibili,
     collection: {
       stage: cfg.stageCollectionEnabled,
       hotVote: cfg.hotVoteCollectionEnabled,
       weiboStage: cfg.weiboStageCollectionEnabled,
+      bilibili: cfg.bilibiliCollectionEnabled,
+      bilibiliWorkerFetch: cfg.bilibiliWorkerFetchEnabled,
     },
   };
 }
@@ -826,6 +1237,16 @@ function stateToMonitorSnapshot(state, periodId) {
         awkwardValue: row.awkwardValue,
         status: row.status,
         coverUrl: row.coverUrl,
+        bvid: row.bvid,
+        url: row.url,
+        biliTitle: row.biliTitle,
+        owner: row.owner,
+        like: row.like,
+        favorite: row.favorite,
+        coin: row.coin,
+        share: row.share,
+        danmaku: row.danmaku,
+        reply: row.reply,
       });
     });
   });
