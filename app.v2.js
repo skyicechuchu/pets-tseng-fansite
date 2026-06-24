@@ -408,6 +408,8 @@ const MONITOR_STORAGE_KEY = "pets_mgtv_monitor_v1";
 const MONITOR_MAX_SNAPSHOTS = 720;
 const MONITOR_WORKER_HISTORY_LIMIT = 1440;
 const MONITOR_WORKER_RANGE_HISTORY_LIMIT = 30 * 24 * 60;
+const MONITOR_EMPTY_RETRY_LIMIT = 36;
+const MONITOR_EMPTY_RETRY_MS = 5000;
 const MONITOR_MIN_RANGE_MS = 5 * 60 * 1000;
 const MONITOR_NON_TARGET_COLORS = [
   "#2563eb",
@@ -450,6 +452,7 @@ const MONITOR_DATASETS = {
     title: "姐姐夯值投送增量走势",
     emptyName: "姐姐夯值",
     historyPath: "/hot/history",
+    latestPath: "/hot/latest",
     valueLabel: "姐姐",
     yAxisLabel: "新增夯爆了",
     sourceLabel: "姐姐夯值页",
@@ -461,6 +464,7 @@ const MONITOR_DATASETS = {
     title: "微博舞台推荐增量走势",
     emptyName: "微博舞台推荐",
     historyPath: "/weibo/history",
+    latestPath: "/weibo/latest",
     localConfigKey: "weiboStage",
     localHistoryUrlKey: "historyUrl",
     valueLabel: "作品",
@@ -478,6 +482,7 @@ const MONITOR_DATASETS = {
     title: "B站播放增量走势",
     emptyName: "B站播放",
     historyPath: "/bilibili/history",
+    latestPath: "/bilibili/latest",
     sourceConfigKey: "bilibili",
     valueLabel: "视频",
     yAxisLabel: "新增播放量",
@@ -490,6 +495,7 @@ const MONITOR_DATASETS = {
     title: "舞台助力增量走势",
     emptyName: "舞台助力",
     historyPath: "/history",
+    latestPath: "/latest",
     valueLabel: "作品",
     yAxisLabel: "新增助力数",
     sourceLabel: "芒推推页面",
@@ -543,6 +549,7 @@ function monitorDatasetSourceUrl(c, dataset) {
 
 function monitorHistorySourceLabel() {
   if (monitorHistorySource === "worker") return "后台时间序列";
+  if (monitorHistorySource === "worker-latest") return "后台最新快照";
   if (monitorHistorySource === "local-json") return "本地采集文件";
   return "自动监控";
 }
@@ -718,6 +725,26 @@ async function fetchMonitorHistoryJson(dataset, mgtv) {
       mgtv,
       1
     );
+  }
+}
+function monitorSnapshotFitsRequestRange(snapshot) {
+  const range = monitorHistoryRequestRange();
+  if (!range || !snapshot || !Number.isFinite(snapshot.ts)) return true;
+  return snapshot.ts >= range.startMs && snapshot.ts <= range.endMs;
+}
+async function fetchMonitorLatestSnapshot(dataset, campaign) {
+  if (!dataset.latestPath || !workerApiBase(campaign.mgtv)) return null;
+  try {
+    const json = await fetchWorkerJsonWithRetry(dataset.latestPath, { _latest: Date.now() }, campaign.mgtv, 1);
+    const state = dataset.key === "bilibili"
+      ? hydrateBilibiliState(json.state || {}, "worker", json.meta)
+      : hydrateMgtvState(json.state || {}, "worker", json.meta);
+    const snapshot = snapshotFromMgtvState(state);
+    if (!snapshot.rows.length || !monitorSnapshotFitsRequestRange(snapshot)) return null;
+    return hydrateMonitorSnapshot(snapshot);
+  } catch (err) {
+    console.warn(`${dataset.emptyName}最新快照暂时不可用`, err);
+    return null;
   }
 }
 async function fetchLocalMonitorHistoryJson(dataset, campaign) {
@@ -1831,10 +1858,21 @@ async function loadMonitorHistoryForDisplay(c) {
       const snapshots = (json.snapshots || []).map(hydrateMonitorSnapshot).filter(s => s.ts && s.rows.length);
       monitorHistorySource = "worker";
       monitorHistoryStatus = { ok: true, source: "worker", count: snapshots.length, error: "" };
-      monitorAutoRetryCount = 0;
-      if (monitorRetryTimer) clearTimeout(monitorRetryTimer);
-      monitorRetryTimer = null;
-      if (!dataset.localConfigKey || snapshots.length) return sanitizeMonitorHistory(snapshots);
+      if (snapshots.length) {
+        monitorAutoRetryCount = 0;
+        if (monitorRetryTimer) clearTimeout(monitorRetryTimer);
+        monitorRetryTimer = null;
+        return sanitizeMonitorHistory(snapshots);
+      }
+      if (!dataset.localConfigKey) {
+        const latest = await fetchMonitorLatestSnapshot(dataset, c);
+        if (latest) {
+          monitorHistorySource = "worker-latest";
+          monitorHistoryStatus = { ok: true, source: "worker-latest", count: 1, error: "" };
+          return sanitizeMonitorHistory([latest]);
+        }
+        return [];
+      }
     } catch (e) {
       console.warn("Worker 历史暂时不可用，改用浏览器本地历史", e);
       monitorHistoryStatus = {
@@ -1880,7 +1918,7 @@ function snapshotFromMgtvState(state) {
   (state.periods || []).forEach(period => {
     (period.rows || []).forEach(row => {
       rows.push({
-        key: `${period.periodId}:${row.coverId || `${row.title}:${row.rank}`}`,
+        key: row.key || `${period.periodId}:${row.coverId || row.bvid || `${row.title}:${row.rank}`}`,
         periodId: Number(period.periodId),
         periodLabel: period.periodLabel,
         title: row.title,
@@ -1890,6 +1928,23 @@ function snapshotFromMgtvState(state) {
         roundAmount: row.roundAmount,
         onScreenCount: row.onScreenCount,
         isTarget: row.isTarget,
+        coverId: row.coverId,
+        coverUrl: row.coverUrl,
+        hotValue: row.hotValue,
+        awkwardValue: row.awkwardValue,
+        status: row.status,
+        bvid: row.bvid,
+        url: row.url,
+        biliTitle: row.biliTitle,
+        owner: row.owner,
+        performers: row.performers,
+        performerText: row.performerText,
+        like: row.like,
+        favorite: row.favorite,
+        coin: row.coin,
+        share: row.share,
+        danmaku: row.danmaku,
+        reply: row.reply,
       });
     });
   });
@@ -2332,12 +2387,12 @@ function renderMonitorNameSelector(metrics, selectedKeys, context) {
     </div>`;
 }
 function scheduleMonitorRetry() {
-  if (monitorRetryTimer || monitorAutoRetryCount >= 5) return;
+  if (monitorRetryTimer || monitorAutoRetryCount >= MONITOR_EMPTY_RETRY_LIMIT) return;
   monitorAutoRetryCount += 1;
   monitorRetryTimer = setTimeout(() => {
     monitorRetryTimer = null;
     renderMonitor();
-  }, 6000);
+  }, MONITOR_EMPTY_RETRY_MS);
 }
 function renderMonitorLoading(c) {
   const datasetTabs = monitorDatasetTabs(c);
@@ -2361,7 +2416,10 @@ function renderMonitorEmpty(c, history) {
   const samples = history.length;
   const hasWorker = Boolean(workerApiBase(c.mgtv)) && !dataset.localConfigKey;
   const hasError = monitorHistoryStatus.ok === false;
-  const message = hasError && dataset.localConfigKey
+  const rangeEmpty = !hasError && monitorWindowMode === "custom";
+  const message = rangeEmpty
+    ? `所选时间范围内暂时没有${dataset.emptyName}快照。可以扩大时间范围，或等待后台下一次采样后页面自动重读。`
+    : hasError && dataset.localConfigKey
     ? `暂时没有读到${dataset.emptyName}时间序列。先运行本地采集脚本，或部署新版 Worker 后再刷新。`
     : hasError
       ? "暂时没有连上后台时间序列。这通常是网络、Worker 冷启动、浏览器缓存或页面刚更新时的一次性请求失败；页面会自动重试，也可以手动重新连接。"
@@ -2398,7 +2456,8 @@ function renderMonitorEmpty(c, history) {
       </div>
     </div>`;
   attachMonitorHandlers(c, history);
-  if (monitorHistoryStatus.ok === false) scheduleMonitorRetry();
+  if (monitorHistoryStatus.ok === false || (hasWorker && samples < 1)) scheduleMonitorRetry();
+  scheduleMonitorRefresh(c, dataset);
   alignMonitorHash();
 }
 async function renderMonitor(options) {
