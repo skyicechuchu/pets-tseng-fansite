@@ -58,9 +58,9 @@ const DEFAULT_BILIBILI_VIDEOS = [
   { bvid: "BV1RaDNBYEAD", title: "爱丫爱丫", owner: "张艺上", performers: ["张艺上"] },
   { bvid: "BV1C47y65E1R", title: "胆小鬼", owner: "江语晨Jessie", performers: ["唐艺昕", "范玮琪", "江语晨", "孙怡"] },
   { bvid: "BV1FyE36mEdB", title: "左边", owner: "范玮琪", performers: ["范玮琪", "唐艺昕"] },
-  { bvid: "BV1bLjB6eESg", title: "讨厌", owner: "李小冉", performers: ["李心洁", "江语晨", "阚清子", "安崎", "庄法"] },
+  { bvid: "BV1bLjB6eESg", title: "讨厌", owner: "李小冉", performers: ["李小冉", "李心洁", "江语晨", "阚清子", "安崎"] },
   { bvid: "BV13p5r6zEKU", title: "梨花颂", owner: "京剧人侯宇", performers: ["侯宇"] },
-  { bvid: "BV1zad9BxEX3", title: "霍元甲", owner: "张月ZhangYue", performers: ["张月"] },
+  { bvid: "BV1zad9BxEX3", title: "霍元甲", owner: "张月ZhangYue", performers: ["张月", "代斯", "徐梦洁", "陈瑶"] },
   { bvid: "BV1skGH6TEE6", title: "花蝴蝶", owner: "江语晨Jessie", performers: ["李斯丹妮", "孙怡", "宋妍霏", "江语晨"] },
 ];
 
