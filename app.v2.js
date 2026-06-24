@@ -407,6 +407,7 @@ let mgtvLastForegroundRefreshAt = 0;
 const MONITOR_STORAGE_KEY = "pets_mgtv_monitor_v1";
 const MONITOR_MAX_SNAPSHOTS = 720;
 const MONITOR_WORKER_HISTORY_LIMIT = 1440;
+const MONITOR_WORKER_RANGE_HISTORY_LIMIT = 30 * 24 * 60;
 const MONITOR_MIN_RANGE_MS = 5 * 60 * 1000;
 const MONITOR_NON_TARGET_COLORS = [
   "#2563eb",
@@ -687,12 +688,36 @@ async function fetchWorkerJsonWithRetry(path, params, mgtv, retries) {
   }
   throw lastError;
 }
+function monitorHistoryRequestRange() {
+  if (monitorWindowMode === "custom" && Number.isFinite(monitorRangeStartTs) && Number.isFinite(monitorRangeEndTs)) {
+    const start = Math.min(monitorRangeStartTs, monitorRangeEndTs);
+    const end = Math.max(monitorRangeStartTs, monitorRangeEndTs);
+    return { startMs: Math.max(0, start - MONITOR_MIN_RANGE_MS), endMs: end };
+  }
+  if (monitorWindowMode === "7d") {
+    const end = Date.now();
+    return { startMs: Math.max(0, end - monitorWindowMs(monitorWindowMode) - MONITOR_MIN_RANGE_MS), endMs: end };
+  }
+  return null;
+}
 async function fetchMonitorHistoryJson(dataset, mgtv) {
+  const params = { limit: MONITOR_WORKER_HISTORY_LIMIT };
+  const requestRange = monitorHistoryRequestRange();
+  if (requestRange) {
+    params.limit = MONITOR_WORKER_RANGE_HISTORY_LIMIT;
+    params.startMs = requestRange.startMs;
+    params.endMs = requestRange.endMs;
+  }
   try {
-    return await fetchWorkerJsonWithRetry(dataset.historyPath, { limit: MONITOR_WORKER_HISTORY_LIMIT }, mgtv, 2);
+    return await fetchWorkerJsonWithRetry(dataset.historyPath, params, mgtv, 2);
   } catch (err) {
     if (MONITOR_WORKER_HISTORY_LIMIT <= 360) throw err;
-    return fetchWorkerJsonWithRetry(dataset.historyPath, { limit: 360, _fallback: Date.now() }, mgtv, 1);
+    return fetchWorkerJsonWithRetry(
+      dataset.historyPath,
+      Object.assign({}, params, { limit: Math.min(Number(params.limit) || MONITOR_WORKER_HISTORY_LIMIT, 360), _fallback: Date.now() }),
+      mgtv,
+      1
+    );
   }
 }
 async function fetchLocalMonitorHistoryJson(dataset, campaign) {
@@ -1429,7 +1454,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
           <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h3 class="font-display text-2xl text-brand-600">公演舞台统计</h3>
-              <p class="mt-1 text-sm text-gray-500">四个公演舞台的助力值、上屏次数与本轮进度</p>
+              <p class="mt-1 text-sm text-gray-500">各公演舞台的助力值、上屏次数与本轮进度</p>
             </div>
           </div>
           <div class="mb-6 flex gap-3 overflow-x-auto pb-2">${tabs}</div>

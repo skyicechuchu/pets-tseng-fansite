@@ -10,6 +10,9 @@ const DEFAULTS = {
 
 const HOT_VOTE_PERIOD_ID = 202606;
 const HOT_VOTE_PERIOD_LABEL = "姐姐夯值";
+const MAX_HISTORY_LIMIT = 30 * 24 * 60;
+const MAX_RANGE_HISTORY_POINTS = 2880;
+const HISTORY_BUCKET_MS = 60 * 1000;
 const BILIBILI_PERIOD_ID = 20260623;
 const BILIBILI_PERIOD_LABEL = "B站舞台数据";
 const BILIBILI_DEFAULT_REFRESH_MS = 5 * 60 * 1000;
@@ -112,9 +115,9 @@ async function handleRequest(request, env) {
     }
 
     if (request.method === "GET" && url.pathname === "/history") {
-      const limit = clampInt(url.searchParams.get("limit"), 2, 1440, 720);
+      const limit = clampInt(url.searchParams.get("limit"), 2, MAX_HISTORY_LIMIT, 720);
       const periodId = url.searchParams.get("periodId");
-      return json(await history(env, limit, periodId), cors);
+      return json(await history(env, limit, periodId, historyRange(url)), cors);
     }
 
     if (request.method === "GET" && url.pathname === "/hot/latest") {
@@ -122,9 +125,9 @@ async function handleRequest(request, env) {
     }
 
     if (request.method === "GET" && url.pathname === "/hot/history") {
-      const limit = clampInt(url.searchParams.get("limit"), 2, 1440, 720);
+      const limit = clampInt(url.searchParams.get("limit"), 2, MAX_HISTORY_LIMIT, 720);
       const periodId = url.searchParams.get("periodId");
-      return json(await hotHistory(env, limit, periodId), cors);
+      return json(await hotHistory(env, limit, periodId, historyRange(url)), cors);
     }
 
     if (request.method === "GET" && url.pathname === "/weibo/latest") {
@@ -132,9 +135,9 @@ async function handleRequest(request, env) {
     }
 
     if (request.method === "GET" && url.pathname === "/weibo/history") {
-      const limit = clampInt(url.searchParams.get("limit"), 2, 1440, 720);
+      const limit = clampInt(url.searchParams.get("limit"), 2, MAX_HISTORY_LIMIT, 720);
       const periodId = url.searchParams.get("periodId");
-      return json(await weiboHistory(env, limit, periodId), cors);
+      return json(await weiboHistory(env, limit, periodId, historyRange(url)), cors);
     }
 
     if (request.method === "GET" && url.pathname === "/bilibili/latest") {
@@ -150,9 +153,9 @@ async function handleRequest(request, env) {
     }
 
     if (request.method === "GET" && url.pathname === "/bilibili/history") {
-      const limit = clampInt(url.searchParams.get("limit"), 2, 1440, 720);
+      const limit = clampInt(url.searchParams.get("limit"), 2, MAX_HISTORY_LIMIT, 720);
       const periodId = url.searchParams.get("periodId");
-      return json(await bilibiliHistory(env, limit, periodId), cors);
+      return json(await bilibiliHistory(env, limit, periodId, historyRange(url)), cors);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/collect") {
@@ -267,6 +270,70 @@ function clampInt(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function historyRange(url) {
+  let startMs = Number(url.searchParams.get("startMs"));
+  let endMs = Number(url.searchParams.get("endMs"));
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+  startMs = Math.max(0, Math.floor(startMs));
+  endMs = Math.max(0, Math.floor(endMs));
+  if (startMs > endMs) [startMs, endMs] = [endMs, startMs];
+  return { startMs, endMs };
+}
+
+async function snapshotRows(env, limit, range, marker) {
+  if (range) return snapshotRowsForRange(env, limit, range, marker);
+  const clauses = [];
+  const binds = [];
+  if (marker) {
+    clauses.push("raw_json LIKE ?");
+    binds.push(marker);
+  }
+  const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+  const rows = await env.DB.prepare(
+    `SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots${where} ORDER BY captured_ms DESC LIMIT ?`
+  ).bind(...binds, limit).all();
+  return rows.results || [];
+}
+
+async function snapshotRowsForRange(env, limit, range, marker) {
+  const pointLimit = Math.max(2, Math.min(limit, MAX_RANGE_HISTORY_POINTS));
+  const span = Math.max(0, range.endMs - range.startMs);
+  const bucketMs = Math.max(
+    HISTORY_BUCKET_MS,
+    Math.ceil(span / Math.max(1, pointLimit - 1) / HISTORY_BUCKET_MS) * HISTORY_BUCKET_MS
+  );
+  const clauses = ["captured_ms BETWEEN ? AND ?"];
+  const binds = [range.startMs, range.endMs];
+  if (marker) {
+    clauses.push("raw_json LIKE ?");
+    binds.push(marker);
+  }
+  const where = clauses.join(" AND ");
+  const rows = await env.DB.prepare(
+    `SELECT s.id, s.captured_at, s.captured_ms, s.current_period_id, s.raw_json
+       FROM snapshots s
+       INNER JOIN (
+         SELECT MAX(captured_ms) AS picked_ms
+           FROM snapshots
+          WHERE ${where}
+          GROUP BY CAST(captured_ms / ? AS INTEGER)
+          ORDER BY picked_ms DESC
+          LIMIT ?
+       ) picked ON picked.picked_ms = s.captured_ms
+      ORDER BY s.captured_ms DESC`
+  ).bind(...binds, bucketMs, pointLimit).all();
+  return (rows.results || []).map(row => Object.assign({}, row, { bucket_ms: bucketMs }));
+}
+
+function monitorSnapshotFromRow(row, pick, periodId) {
+  try {
+    const state = pick(parseStoredState(row.raw_json));
+    return state ? stateToMonitorSnapshot(state, periodId) : null;
+  } catch (err) {
+    return null;
+  }
 }
 
 function minuteBucket(date = new Date()) {
@@ -768,15 +835,12 @@ async function latest(env) {
   };
 }
 
-async function history(env, limit, periodId) {
-  const rows = await env.DB.prepare(
-    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT ?"
-  ).bind(limit).all();
-  const snapshots = (rows.results || [])
+async function history(env, limit, periodId, range) {
+  const rows = await snapshotRows(env, limit, range);
+  const snapshots = rows
     .reverse()
-    .map(row => campaignState(parseStoredState(row.raw_json)))
+    .map(row => monitorSnapshotFromRow(row, campaignState, periodId))
     .filter(Boolean)
-    .map(state => stateToMonitorSnapshot(state, periodId));
   return {
     ok: true,
     source: "worker",
@@ -784,6 +848,7 @@ async function history(env, limit, periodId) {
     meta: {
       count: snapshots.length,
       limit,
+      range,
       periodId: periodId ? Number(periodId) : null,
     },
   };
@@ -804,15 +869,12 @@ async function hotLatest(env) {
   };
 }
 
-async function hotHistory(env, limit, periodId) {
-  const rows = await env.DB.prepare(
-    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT ?"
-  ).bind(limit).all();
-  const snapshots = (rows.results || [])
+async function hotHistory(env, limit, periodId, range) {
+  const rows = await snapshotRows(env, limit, range);
+  const snapshots = rows
     .reverse()
-    .map(row => hotVoteState(parseStoredState(row.raw_json)))
-    .filter(Boolean)
-    .map(state => stateToMonitorSnapshot(state, periodId));
+    .map(row => monitorSnapshotFromRow(row, hotVoteState, periodId))
+    .filter(Boolean);
   return {
     ok: true,
     source: "worker",
@@ -820,6 +882,7 @@ async function hotHistory(env, limit, periodId) {
     meta: {
       count: snapshots.length,
       limit,
+      range,
       periodId: periodId ? Number(periodId) : null,
     },
   };
@@ -840,15 +903,12 @@ async function weiboLatest(env) {
   };
 }
 
-async function weiboHistory(env, limit, periodId) {
-  const rows = await env.DB.prepare(
-    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT ?"
-  ).bind(limit).all();
-  const snapshots = (rows.results || [])
+async function weiboHistory(env, limit, periodId, range) {
+  const rows = await snapshotRows(env, limit, range);
+  const snapshots = rows
     .reverse()
-    .map(row => weiboStageState(parseStoredState(row.raw_json)))
-    .filter(Boolean)
-    .map(state => stateToMonitorSnapshot(state, periodId));
+    .map(row => monitorSnapshotFromRow(row, weiboStageState, periodId))
+    .filter(Boolean);
   const cleaned = sanitizeMonitorSnapshots(snapshots);
   return {
     ok: true,
@@ -857,6 +917,7 @@ async function weiboHistory(env, limit, periodId) {
     meta: {
       count: cleaned.length,
       limit,
+      range,
       periodId: periodId ? Number(periodId) : null,
     },
   };
@@ -877,15 +938,12 @@ async function bilibiliLatest(env) {
   };
 }
 
-async function bilibiliHistory(env, limit, periodId) {
-  const rows = await env.DB.prepare(
-    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots WHERE raw_json LIKE ? ORDER BY captured_ms DESC LIMIT ?"
-  ).bind(BILIBILI_STATE_MARKER, limit).all();
-  const snapshots = (rows.results || [])
+async function bilibiliHistory(env, limit, periodId, range) {
+  const rows = await snapshotRows(env, limit, range, BILIBILI_STATE_MARKER);
+  const snapshots = rows
     .reverse()
-    .map(row => bilibiliState(parseStoredState(row.raw_json)))
-    .filter(Boolean)
-    .map(state => stateToMonitorSnapshot(state, periodId));
+    .map(row => monitorSnapshotFromRow(row, bilibiliState, periodId))
+    .filter(Boolean);
   return {
     ok: true,
     source: "worker",
@@ -893,6 +951,7 @@ async function bilibiliHistory(env, limit, periodId) {
     meta: {
       count: snapshots.length,
       limit,
+      range,
       periodId: periodId ? Number(periodId) : null,
     },
   };
