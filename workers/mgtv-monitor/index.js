@@ -14,26 +14,54 @@ const BILIBILI_PERIOD_ID = 20260623;
 const BILIBILI_PERIOD_LABEL = "B站舞台数据";
 const BILIBILI_DEFAULT_REFRESH_MS = 5 * 60 * 1000;
 const DEFAULT_BILIBILI_VIDEOS = [
-  { bvid: "BV1nuDgBREJE", title: "一个人想着一个人", owner: "曾沛慈_TsengPets" },
-  { bvid: "BV1rqQcBqEmk", title: "一半一半", owner: "曾沛慈_TsengPets" },
-  { bvid: "BV1SgZFBfE95", title: "言不由衷", owner: "曾沛慈_TsengPets" },
-  { bvid: "BV1aQDCBNEPz", title: "一半一半练习室", owner: "淡淡Dancey" },
-  { bvid: "BV1usjH6WEoz", title: "怎么说我不爱你", owner: "曾沛慈_TsengPets" },
-  { bvid: "BV1y1GH6NEtY", title: "缘分一道桥", owner: "尚雯婕Laure" },
-  { bvid: "BV1XZGb6uEUz", title: "惊鸿一面", owner: "王濛" },
-  { bvid: "BV1WFjW6EEMQ", title: "独家记忆", owner: "王濛" },
-  { bvid: "BV1owEu6qEqT", title: "搁浅", owner: "叶一茜" },
-  { bvid: "BV1xaG76tEBt", title: "一样的月光", owner: "曾沛慈_TsengPets" },
-  { bvid: "BV1tZGe6yEnZ", title: "第一次爱的人", owner: "曾沛慈_TsengPets" },
-  { bvid: "BV1hio9B2EvU", title: "篇章", owner: "王濛" },
-  { bvid: "BV1j67y6vEWy", title: "普通disco", owner: "王濛" },
-  { bvid: "BV1z5GH6xExR", title: "宝莲", owner: "JIA孟佳" },
-  { bvid: "BV1gvSSBjEEs", title: "恋爱告急", owner: "演员陈瑶" },
-  { bvid: "BV1yUGx6UESo", title: "野心家", owner: "张月ZhangYue" },
-  { bvid: "BV16CoFBGEUD", title: "心愿便利贴", owner: "极锋Jeff" },
-  { bvid: "BV1xDo9BTEnc", title: "我会等", owner: "京剧人侯宇" },
-  { bvid: "BV1tEojBeEbU", title: "bonbon girls", owner: "淡淡Dancey" },
-  { bvid: "BV1Fo9gBYEHc", title: "站在草原望北京", owner: "民族流行歌手乌兰图雅" },
+  { bvid: "BV1nuDgBREJE", title: "一个人想着一个人", owner: "曾沛慈_TsengPets", performers: ["曾沛慈"] },
+  { bvid: "BV1rqQcBqEmk", title: "一半一半", owner: "曾沛慈_TsengPets", performers: ["曾沛慈", "淡淡", "黄灿灿"] },
+  { bvid: "BV1SgZFBfE95", title: "言不由衷", owner: "曾沛慈_TsengPets", performers: ["曾沛慈", "张月"] },
+  { bvid: "BV1aQDCBNEPz", title: "一半一半练习室", owner: "淡淡Dancey", performers: ["曾沛慈", "淡淡", "黄灿灿"] },
+  { bvid: "BV1usjH6WEoz", title: "怎么说我不爱你", owner: "曾沛慈_TsengPets", performers: ["曾沛慈"] },
+  { bvid: "BV1y1GH6NEtY", title: "缘分一道桥", owner: "尚雯婕Laure", performers: ["王濛", "陈瑶", "尚雯婕", "萨顶顶"] },
+  { bvid: "BV1XZGb6uEUz", title: "惊鸿一面", owner: "王濛", performers: ["王濛", "李小冉", "唐艺昕", "陈瑶", "淡淡"] },
+  { bvid: "BV1WFjW6EEMQ", title: "独家记忆", owner: "王濛", performers: ["陈凯琳", "王濛"] },
+  { bvid: "BV1owEu6qEqT", title: "搁浅", owner: "叶一茜", performers: ["曾沛慈", "叶一茜"] },
+  { bvid: "BV1xaG76tEBt", title: "一样的月光", owner: "曾沛慈_TsengPets", performers: ["曾沛慈"] },
+  { bvid: "BV1tZGe6yEnZ", title: "第一次爱的人", owner: "曾沛慈_TsengPets", performers: ["曾沛慈", "徐梦洁", "谢楠", "万千惠", "张慧雯"] },
+  { bvid: "BV1hio9B2EvU", title: "篇章", owner: "王濛", performers: ["王濛", "曾沛慈", "黄灿灿"] },
+  { bvid: "BV1j67y6vEWy", title: "普通disco", owner: "王濛", performers: ["王濛", "李小冉", "淡淡", "乌兰图雅", "陈凯琳"] },
+  { bvid: "BV1z5GH6xExR", title: "宝莲", owner: "JIA孟佳", performers: ["曾沛慈", "徐梦洁", "孟佳", "王霏霏"] },
+  { bvid: "BV1gvSSBjEEs", title: "恋爱告急", owner: "演员陈瑶", performers: ["陈瑶"] },
+  { bvid: "BV1yUGx6UESo", title: "野心家", owner: "张月ZhangYue", performers: ["张月"] },
+  { bvid: "BV16CoFBGEUD", title: "心愿便利贴", owner: "极锋Jeff", performers: ["李小冉", "王濛", "唐艺昕"] },
+  { bvid: "BV1xDo9BTEnc", title: "我会等", owner: "京剧人侯宇", performers: ["李小冉", "徐洁儿", "阚清子", "侯宇"] },
+  { bvid: "BV1tEojBeEbU", title: "bonbon girls", owner: "淡淡Dancey", performers: ["淡淡", "陈凯琳", "何宣林", "唐艺昕"] },
+  { bvid: "BV1Fo9gBYEHc", title: "站在草原望北京", owner: "民族流行歌手乌兰图雅", performers: ["乌兰图雅"] },
+  { bvid: "BV1tHj66MEtX", title: "那时雨", owner: "王濛", performers: ["王濛", "乌兰图雅", "叶一茜", "万千惠", "陈凯琳"] },
+  { bvid: "BV1Ub7D6TEjd", title: "Susan说", owner: "曾沛慈_TsengPets", performers: ["曾沛慈"] },
+  { bvid: "BV1bED1BvE3j", title: "大艺术家", owner: "维妮娜Nina", performers: ["庄法", "江语晨", "维妮娜"] },
+  { bvid: "BV1uJDmBkENn", title: "彩虹的微笑", owner: "陶昕然", performers: ["萧蔷", "陶昕然", "安崎"] },
+  { bvid: "BV16i7y6MECX", title: "DNA", owner: "TRANGPHAP庄法", performers: ["李心洁", "庄法", "徐梦洁", "何宣林"] },
+  { bvid: "BV14SGz6xEzr", title: "月牙湾", owner: "安崎", performers: ["安崎"] },
+  { bvid: "BV1P9DNBJEmz", title: "see u love me", owner: "黄灿灿acan", performers: ["黄灿灿"] },
+  { bvid: "BV1Chj66wEmX", title: "心引力", owner: "曾沛慈_TsengPets", performers: ["曾沛慈"] },
+  { bvid: "BV1VNojBVE6L", title: "EGO-HOLIC 恋我癖", owner: "温峥嵘", performers: ["庄法", "萧蔷", "安崎", "温峥嵘"] },
+  { bvid: "BV1FVoQBREX7", title: "孤单北半球", owner: "张月ZhangYue", performers: ["张月", "者来女", "张慧雯", "陈瑶"] },
+  { bvid: "BV1mUdBBbEWv", title: "Interstellar", owner: "张月ZhangYue", performers: ["张月"] },
+  { bvid: "BV1KPD5ByEXK", title: "花儿为什么这样红", owner: "安崎", performers: ["安崎"] },
+  { bvid: "BV1yAoQBhE9C", title: "达拉崩吧", owner: "民族流行歌手乌兰图雅", performers: ["乌兰图雅", "万千惠", "代斯", "张艺上"] },
+  { bvid: "BV1iUj66SErd", title: "CAMERA READY", owner: "淡淡Dancey", performers: ["张月", "徐洁儿", "谢楠", "淡淡", "黄灿灿"] },
+  { bvid: "BV1hhDyBqEwS", title: "Just Like Fire", owner: "民族流行歌手乌兰图雅", performers: ["乌兰图雅", "者来女", "万千惠"] },
+  { bvid: "BV1LNL36YEhW", title: "花火", owner: "李小冉", performers: ["李小冉"] },
+  { bvid: "BV1nCE36jEMh", title: "短发", owner: "谢楠", performers: ["谢楠"] },
+  { bvid: "BV1eWGH6JEQi", title: "另一个天堂", owner: "徐洁儿Jill", performers: ["徐洁儿"] },
+  { bvid: "BV1P6oLBhEQg", title: "冷夜", owner: "陶昕然", performers: ["李心洁", "谢楠", "陶昕然", "徐梦洁"] },
+  { bvid: "BV16AjH6BEbd", title: "梦一场", owner: "李小冉", performers: ["李小冉", "李心洁"] },
+  { bvid: "BV1oQGb6VEAP", title: "逆战", owner: "安崎", performers: ["安崎", "李心洁", "乌兰图雅", "叶一茜", "庄法"] },
+  { bvid: "BV1RaDNBYEAD", title: "爱丫爱丫", owner: "张艺上", performers: ["张艺上"] },
+  { bvid: "BV1C47y65E1R", title: "胆小鬼", owner: "江语晨Jessie", performers: ["唐艺昕", "范玮琪", "江语晨", "孙怡"] },
+  { bvid: "BV1FyE36mEdB", title: "左边", owner: "范玮琪", performers: ["范玮琪", "唐艺昕"] },
+  { bvid: "BV1bLjB6eESg", title: "讨厌", owner: "李小冉", performers: ["李小冉", "李心洁", "江语晨", "阚清子", "安崎"] },
+  { bvid: "BV13p5r6zEKU", title: "梨花颂", owner: "京剧人侯宇", performers: ["侯宇"] },
+  { bvid: "BV1zad9BxEX3", title: "霍元甲", owner: "张月ZhangYue", performers: ["张月"] },
+  { bvid: "BV1skGH6TEE6", title: "花蝴蝶", owner: "江语晨Jessie", performers: ["李斯丹妮", "孙怡", "宋妍霏", "江语晨"] },
 ];
 
 export default {
@@ -182,6 +210,7 @@ function parseBilibiliVideos(raw) {
           bvid: String(item && (item.bvid || item.bili || "") || "").trim(),
           title: String(item && item.title || "").trim(),
           owner: String(item && item.owner || "").trim(),
+          performers: normalizeBilibiliPerformers(item && item.performers),
         };
       }).filter(item => /^BV[0-9A-Za-z]{10}$/.test(item.bvid));
       return videos.length ? videos : DEFAULT_BILIBILI_VIDEOS;
@@ -193,6 +222,16 @@ function parseBilibiliVideos(raw) {
     if (videos.length) return videos;
   }
   return DEFAULT_BILIBILI_VIDEOS;
+}
+
+function normalizeBilibiliPerformers(value) {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map(item => String(item || "").trim()).filter(Boolean)));
+  }
+  if (typeof value === "string") {
+    return Array.from(new Set(value.split(/[、/,，&|｜\s]+/).map(item => item.trim()).filter(Boolean)));
+  }
+  return [];
 }
 
 function corsHeaders(env) {
@@ -365,11 +404,13 @@ function normalizeBilibiliRow(data, fallback, index, targetName, source) {
   const title = String(fallback.title || data.title || bvid).trim();
   const biliTitle = String(data.title || title).trim();
   const ownerName = String(owner.name || "").trim();
+  const performers = normalizeBilibiliPerformers(fallback.performers);
+  const performerText = performers.join("/");
   const haystack = `${title} ${biliTitle} ${ownerName}`;
   return {
     rank: index + 1,
     title,
-    guest: ownerName,
+    guest: performerText || ownerName,
     interactionValue: Number(stat.view || 0),
     roundAmount: Number(stat.like || 0),
     onScreenCount: Number(stat.favorite || 0),
@@ -384,6 +425,8 @@ function normalizeBilibiliRow(data, fallback, index, targetName, source) {
     url: `https://www.bilibili.com/video/${bvid}/`,
     biliTitle,
     owner: ownerName,
+    performers,
+    performerText,
     aid: Number(data.aid || stat.aid || 0),
     like: Number(stat.like || 0),
     favorite: Number(stat.favorite || 0),
@@ -1011,6 +1054,8 @@ function normalizeBilibiliIngestRow(row, index, periodId, periodLabel, targetNam
   const title = String(row.title || row.name || row.biliTitle || bvid || `视频 ${index + 1}`).trim();
   const biliTitle = String(row.biliTitle || row.rawTitle || title).trim();
   const owner = String(row.owner || row.guest || "").trim();
+  const performers = normalizeBilibiliPerformers(row.performers || row.performerNames || row.performerText);
+  const performerText = performers.join("/");
   const interactionValue = Number(
     row.interactionValue != null ? row.interactionValue :
       row.view != null ? row.view :
@@ -1024,7 +1069,7 @@ function normalizeBilibiliIngestRow(row, index, periodId, periodLabel, targetNam
   return {
     rank: Number(row.rank || index + 1),
     title,
-    guest: owner,
+    guest: performerText || owner,
     interactionValue: Number.isFinite(interactionValue) ? interactionValue : 0,
     roundAmount: Number.isFinite(like) ? like : 0,
     onScreenCount: Number.isFinite(favorite) ? favorite : 0,
@@ -1039,6 +1084,8 @@ function normalizeBilibiliIngestRow(row, index, periodId, periodLabel, targetNam
     url: row.url || (bvid ? `https://www.bilibili.com/video/${bvid}/` : ""),
     biliTitle,
     owner,
+    performers,
+    performerText,
     aid: Number(row.aid || 0),
     like,
     favorite,
@@ -1241,6 +1288,8 @@ function stateToMonitorSnapshot(state, periodId) {
         url: row.url,
         biliTitle: row.biliTitle,
         owner: row.owner,
+        performers: row.performers,
+        performerText: row.performerText,
         like: row.like,
         favorite: row.favorite,
         coin: row.coin,

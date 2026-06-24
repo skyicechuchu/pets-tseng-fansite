@@ -380,6 +380,7 @@ let dashboardRankChart = null;
 let dashboardStageChart = null;
 let dashboardHotVoteChart = null;
 let dashboardWeiboStageChart = null;
+let dashboardBilibiliPerformerChart = null;
 let dashboardRefreshTimer = null;
 let dashboardState = null;
 let dashboardHotState = null;
@@ -421,6 +422,21 @@ const MONITOR_NON_TARGET_COLORS = [
   "#a855f7",
   "#14b8a6",
 ];
+const BILIBILI_KNOWN_PERFORMERS = [
+  "曾沛慈", "淡淡", "黄灿灿", "张月", "王濛", "王蒙", "陈瑶", "尚雯婕", "萨顶顶",
+  "李小冉", "唐艺昕", "叶一茜", "徐梦洁", "谢娜", "万千惠", "张楚寒",
+  "孟佳", "王霏霏", "乌兰图雅", "陈凯琳", "徐洁儿", "阚清子", "侯宇",
+  "陈妍希", "何泓姗", "庄法", "江语晨", "维妮娜", "萧蔷", "陶昕然",
+  "安崎", "李心洁", "何宣林", "温峥嵘", "者来女", "张慧雯", "代斯",
+  "张艺上", "谢楠", "范玮琪", "孙怡", "李斯丹妮", "宋妍霏"
+];
+const BILIBILI_STACK_COLORS = [
+  "#dc2626", "#2563eb", "#16a34a", "#7c3aed", "#0891b2", "#ca8a04",
+  "#4f46e5", "#0f766e", "#64748b", "#db2777", "#ea580c", "#9333ea",
+  "#0d9488", "#65a30d", "#0284c7", "#be123c", "#a16207", "#4338ca",
+  "#15803d", "#c2410c"
+];
+const BILIBILI_TABLE_LIMIT = 20;
 const MONITOR_WINDOW_OPTIONS = [
   { label: "今日", mode: "today" },
   { label: "6 小时", mode: "6h" },
@@ -835,6 +851,8 @@ function hydrateBilibiliState(raw, source, meta) {
       share: Number(row.share || 0),
       danmaku: Number(row.danmaku || 0),
       reply: Number(row.reply || 0),
+      performers: splitBilibiliNames(row.performers || row.performerNames || row.performerText),
+      performerText: row.performerText || splitBilibiliNames(row.performers || row.performerNames).join("/"),
       isTarget: Boolean(row.isTarget),
     })),
   }));
@@ -894,6 +912,83 @@ async function loadBilibiliDashboardData(campaign) {
     console.warn("B站舞台数据暂时不可用", err);
     return null;
   }
+}
+function normalizeBilibiliName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+  const alias = { 王蒙: "王濛" };
+  return alias[raw] || raw;
+}
+function uniqueBilibiliNames(names) {
+  const seen = new Set();
+  return (names || []).map(normalizeBilibiliName).filter(name => {
+    if (!name || seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
+}
+function splitBilibiliNames(value) {
+  if (Array.isArray(value)) return uniqueBilibiliNames(value);
+  if (typeof value !== "string") return [];
+  return uniqueBilibiliNames(value.split(/[、/,，&|｜\s]+/));
+}
+function bilibiliVideoConfigMap(c) {
+  const videos = c && c.bilibili && Array.isArray(c.bilibili.videos) ? c.bilibili.videos : [];
+  return new Map(videos.map(video => [String(video.bvid || ""), video]));
+}
+function parseBilibiliNamesFromText(text) {
+  const haystack = String(text || "");
+  return uniqueBilibiliNames(BILIBILI_KNOWN_PERFORMERS.filter(name => haystack.includes(name)));
+}
+function bilibiliPerformersForRow(row, c, configMap) {
+  const cfg = (configMap || bilibiliVideoConfigMap(c)).get(String(row && row.bvid || row && row.coverId || ""));
+  const names =
+    splitBilibiliNames(row && (row.performers || row.performerNames || row.performerText)) ||
+    [];
+  const configured = names.length ? names : splitBilibiliNames(cfg && cfg.performers);
+  if (configured.length) return configured;
+
+  const parsed = parseBilibiliNamesFromText([
+    row && row.biliTitle,
+    row && row.title,
+    cfg && cfg.title,
+    row && row.owner,
+  ].filter(Boolean).join(" "));
+  return parsed.length ? parsed : ["未识别"];
+}
+function bilibiliPerformerText(row, c, configMap) {
+  return bilibiliPerformersForRow(row, c, configMap).join(" / ");
+}
+function bilibiliStageLabel(row) {
+  return String(row && row.title || row && row.biliTitle || row && row.bvid || "未命名舞台").trim();
+}
+function bilibiliBarExcludedPerformers(c) {
+  return new Set(splitBilibiliNames(c && c.bilibili && c.bilibili.barExcludedPerformers));
+}
+function buildBilibiliPerformerStacks(rows, c) {
+  const configMap = bilibiliVideoConfigMap(c);
+  const excluded = bilibiliBarExcludedPerformers(c);
+  const stageLabels = [];
+  const byPerformer = new Map();
+  (rows || []).forEach(row => {
+    const stage = bilibiliStageLabel(row);
+    const views = Number(row && row.interactionValue || row && row.view || 0);
+    if (!stageLabels.includes(stage)) stageLabels.push(stage);
+    bilibiliPerformersForRow(row, c, configMap).forEach(name => {
+      if (excluded.has(name)) return;
+      if (!byPerformer.has(name)) byPerformer.set(name, new Map());
+      const stageMap = byPerformer.get(name);
+      stageMap.set(stage, Number(stageMap.get(stage) || 0) + views);
+    });
+  });
+  const labels = Array.from(byPerformer.entries())
+    .map(([name, stageMap]) => ({
+      name,
+      total: Array.from(stageMap.values()).reduce((sum, value) => sum + Number(value || 0), 0),
+    }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "zh-CN"))
+    .map(item => item.name);
+  return { labels, stageLabels, byPerformer };
 }
 function sumRows(rows, key) {
   return rows.reduce((total, row) => total + Number(row[key] || 0), 0);
@@ -1116,8 +1211,14 @@ function renderBilibiliDashboardSection(c, biliState) {
   const period = biliState && biliState.periods && biliState.periods[0];
   const rows = (period && period.rows || []).slice().sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
   if (!rows.length) return "";
+  const displayRows = rows.slice(0, BILIBILI_TABLE_LIMIT);
 
+  const configMap = bilibiliVideoConfigMap(c);
+  const stackData = buildBilibiliPerformerStacks(displayRows, c);
   const updated = formatBeijingClock(biliState.updatedAt);
+  const cutoffNote = cfg.cutoffNote
+    ? `<p class="mt-1 text-xs text-gray-400">${esc(cfg.cutoffNote)}</p>`
+    : "";
   const sourceLink = cfg.sourceUrl
     ? `<a href="${esc(cfg.sourceUrl)}" target="_blank" rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">B站 ${ICON.external}</a>`
@@ -1127,13 +1228,13 @@ function renderBilibiliDashboardSection(c, biliState) {
   const totalInteract = rows.reduce((sum, row) =>
     sum + Number(row.like || row.roundAmount || 0) + Number(row.favorite || row.onScreenCount || 0) +
       Number(row.coin || 0) + Number(row.share || 0), 0);
-  const officialCount = rows.filter(row => String(row.owner || row.guest || "").includes("曾沛慈")).length;
+  const targetCount = rows.filter(row => bilibiliPerformersForRow(row, c, configMap).includes("曾沛慈")).length;
 
   const stats = [
-    { label: "监控视频", value: `${rows.length} 个`, note: `每 ${Math.round((cfg.refreshMs || 300000) / 60000)} 分钟更新` },
+    { label: "监控视频", value: `${rows.length} 个`, note: `表格显示播放量前 ${BILIBILI_TABLE_LIMIT}` },
     { label: "当前最高播放", value: fmtCompact(top.interactionValue), note: top.title ? `#${top.rank} ${top.title}` : "暂无" },
-    { label: "总播放量", value: fmtCompact(totalView), note: "当前表格合计" },
-    { label: "总互动", value: fmtCompact(totalInteract), note: `官方账号 ${officialCount} 个视频` },
+    { label: "总播放量", value: fmtCompact(totalView), note: "全部监控视频合计" },
+    { label: "总互动", value: fmtCompact(totalInteract), note: `含沛慈 ${targetCount} 个视频` },
   ].map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
       <p class="text-sm text-gray-500">${esc(item.label)}</p>
@@ -1141,8 +1242,9 @@ function renderBilibiliDashboardSection(c, biliState) {
       <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
     </div>`).join("");
 
-  const tableRows = rows.map(row => {
+  const tableRows = displayRows.map(row => {
     const url = row.url || (row.bvid ? `https://www.bilibili.com/video/${row.bvid}/` : "");
+    const performerText = bilibiliPerformerText(row, c, configMap);
     const subtitle = row.biliTitle && row.biliTitle !== row.title
       ? `<p class="mt-0.5 max-w-[28rem] truncate text-xs text-gray-400">${esc(row.biliTitle)}</p>`
       : "";
@@ -1153,7 +1255,7 @@ function renderBilibiliDashboardSection(c, biliState) {
           <p class="font-medium text-gray-800">${esc(row.title)}</p>
           ${subtitle}
         </td>
-        <td class="whitespace-nowrap px-3 py-2 text-gray-500">${esc(row.owner || row.guest || "")}</td>
+        <td class="min-w-[12rem] px-3 py-2 text-gray-500">${esc(performerText)}</td>
         <td class="whitespace-nowrap px-3 py-2 text-right font-semibold text-brand-700">${fmtCompact(row.interactionValue)}</td>
         <td class="whitespace-nowrap px-3 py-2 text-right">${fmtCompact(row.like || row.roundAmount)}</td>
         <td class="whitespace-nowrap px-3 py-2 text-right">${fmtCompact(row.favorite || row.onScreenCount)}</td>
@@ -1164,6 +1266,7 @@ function renderBilibiliDashboardSection(c, biliState) {
         </td>
       </tr>`;
   }).join("");
+  const chartHeight = Math.max(280, stackData.labels.length * 34 + 96);
 
   return `
     <section class="mb-10">
@@ -1171,10 +1274,20 @@ function renderBilibiliDashboardSection(c, biliState) {
         <div>
           <h3 class="font-display text-2xl text-brand-600">B站舞台数据</h3>
           <p class="mt-1 text-sm text-gray-500">最近采样 ${esc(updated)} 北京时间 · 播放、点赞、收藏、投币、转发</p>
+          ${cutoffNote}
         </div>
         <div class="flex flex-wrap items-center gap-3 text-sm">${sourceLink}</div>
       </div>
       <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
+      <div class="mb-6 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h4 class="font-medium text-gray-800">演出者播放量拆分</h4>
+          <p class="text-xs text-gray-400">按播放量 Top 20 舞台堆叠</p>
+        </div>
+        <div class="relative w-full min-w-0" style="height:${chartHeight}px;">
+          <canvas id="bilibiliPerformerChart"></canvas>
+        </div>
+      </div>
       <div class="overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
         <div class="overflow-x-auto">
           <table class="w-full min-w-[58rem] text-sm">
@@ -1182,7 +1295,7 @@ function renderBilibiliDashboardSection(c, biliState) {
               <tr>
                 <th class="px-3 py-2 text-left">排名</th>
                 <th class="px-3 py-2 text-left">舞台</th>
-                <th class="px-3 py-2 text-left">UP主</th>
+                <th class="px-3 py-2 text-left">演出者</th>
                 <th class="px-3 py-2 text-right">播放</th>
                 <th class="px-3 py-2 text-right">点赞</th>
                 <th class="px-3 py-2 text-right">收藏</th>
@@ -1357,7 +1470,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
     </div>`;
 
   attachMgtvDashboardHandlers(c, state);
-  drawMgtvCharts(state, selected, hotState, weiboState);
+  drawMgtvCharts(c, state, selected, hotState, weiboState, biliState);
   alignDashboardHash();
 }
 function alignDashboardHash() {
@@ -1375,7 +1488,8 @@ function attachMgtvDashboardHandlers(c, state) {
   const refresh = document.querySelector("[data-mgtv-refresh]");
   if (refresh) refresh.addEventListener("click", () => loadAndRenderMgtvDashboard(c, dashboardSelectedPeriodId));
 }
-function drawMgtvCharts(state, selected, hotState, weiboState) {
+function drawMgtvCharts(c, state, selected, hotState, weiboState, biliState) {
+  if (dashboardBilibiliPerformerChart) dashboardBilibiliPerformerChart.destroy();
   if (dashboardWeiboStageChart) dashboardWeiboStageChart.destroy();
   if (dashboardHotVoteChart) dashboardHotVoteChart.destroy();
   if (dashboardRankChart) dashboardRankChart.destroy();
@@ -1389,6 +1503,63 @@ function drawMgtvCharts(state, selected, hotState, weiboState) {
     plugins: { legend: { display: false } },
   };
   const hotPeriod = hotState && hotState.periods && hotState.periods[0];
+  const bilibiliCanvas = $("bilibiliPerformerChart");
+  const bilibiliPeriod = biliState && biliState.periods && biliState.periods[0];
+  const bilibiliRows = (bilibiliPeriod && bilibiliPeriod.rows || [])
+    .slice()
+    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
+    .slice(0, BILIBILI_TABLE_LIMIT);
+  if (bilibiliCanvas && bilibiliRows.length) {
+    const stackData = buildBilibiliPerformerStacks(bilibiliRows, c);
+    dashboardBilibiliPerformerChart = new Chart(bilibiliCanvas, {
+      type: "bar",
+      data: {
+        labels: stackData.labels,
+        datasets: stackData.stageLabels.map((stage, index) => ({
+          label: stage,
+          data: stackData.labels.map(name => Number((stackData.byPerformer.get(name) || new Map()).get(stage) || 0)),
+          backgroundColor: BILIBILI_STACK_COLORS[index % BILIBILI_STACK_COLORS.length],
+          borderWidth: 0,
+          borderRadius: 4,
+          stack: "views",
+        })),
+      },
+      options: Object.assign({}, baseOpts, {
+        indexAxis: "y",
+        interaction: { mode: "index", axis: "y", intersect: false },
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: { boxWidth: 10, usePointStyle: true },
+          },
+          tooltip: {
+            filter: item => Number(item.raw || 0) > 0,
+            callbacks: {
+              label: item => `${item.dataset.label}: ${fmtInt(item.raw)} 播放`,
+              footer: items => {
+                const total = items.reduce((sum, item) => sum + Number(item.raw || 0), 0);
+                return `合计: ${fmtInt(total)} 播放`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            beginAtZero: true,
+            grid: { color: "#fde8e8" },
+            title: { display: true, text: "播放量" },
+            ticks: { callback: value => fmtCompact(value) },
+          },
+          y: {
+            stacked: true,
+            grid: { display: false },
+          },
+        },
+      }),
+    });
+  }
+
   const hotCanvas = $("hotVoteChart");
   if (hotCanvas && hotPeriod) {
     const hotRows = (hotPeriod.rows || [])
@@ -1586,6 +1757,8 @@ function hydrateMonitorSnapshot(snapshot) {
       share: Number(row.share || 0),
       danmaku: Number(row.danmaku || 0),
       reply: Number(row.reply || 0),
+      performers: splitBilibiliNames(row.performers || row.performerNames || row.performerText),
+      performerText: row.performerText || splitBilibiliNames(row.performers || row.performerNames).join("/"),
       isTarget: Boolean(row.isTarget),
     })),
   });

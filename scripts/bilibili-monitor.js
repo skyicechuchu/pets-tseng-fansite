@@ -52,6 +52,16 @@ function videoUrl(bvid) {
   return `https://api.bilibili.com/x/web-interface/view?${query.toString()}`;
 }
 
+function normalizePerformerList(value) {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map(item => String(item || "").trim()).filter(Boolean)));
+  }
+  if (typeof value === "string") {
+    return Array.from(new Set(value.split(/[、/,，&|｜\s]+/).map(item => item.trim()).filter(Boolean)));
+  }
+  return [];
+}
+
 async function fetchVideo(video) {
   const res = await fetch(videoUrl(video.bvid), {
     headers: {
@@ -66,10 +76,13 @@ async function fetchVideo(video) {
   const data = payload.data || {};
   const stat = data.stat || {};
   const owner = data.owner || {};
+  const performers = normalizePerformerList(video.performers);
   return {
     title: video.title || data.title || video.bvid,
     biliTitle: data.title || video.title || video.bvid,
     owner: owner.name || video.owner || "",
+    performers,
+    performerText: performers.join("/"),
     bvid: data.bvid || video.bvid,
     url: `https://www.bilibili.com/video/${data.bvid || video.bvid}/`,
     aid: Number(data.aid || stat.aid || 0),
@@ -87,10 +100,22 @@ async function fetchVideo(video) {
   };
 }
 
+async function settleInBatches(items, limit, fn) {
+  const results = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const batch = items.slice(i, i + limit);
+    const settled = await Promise.allSettled(batch.map(fn));
+    results.push(...settled);
+  }
+  return results;
+}
+
 async function collectState(site) {
-  const videos = site.campaign && site.campaign.bilibili && site.campaign.bilibili.videos || [];
+  const biliConfig = site.campaign && site.campaign.bilibili || {};
+  const videos = biliConfig.videos || [];
+  const minViewCount = Number(biliConfig.minViewCount || 0);
   if (!videos.length) throw new Error("campaign.bilibili.videos is empty");
-  const results = await Promise.allSettled(videos.map(fetchVideo));
+  const results = await settleInBatches(videos, 6, fetchVideo);
   const rows = [];
   const errors = [];
   results.forEach((result, index) => {
@@ -98,11 +123,20 @@ async function collectState(site) {
     if (result.status === "fulfilled") rows.push(result.value);
     else errors.push({ bvid: video.bvid || "", error: result.reason && result.reason.message || String(result.reason) });
   });
+  const excluded = minViewCount > 0
+    ? rows.filter(row => Number(row.interactionValue || 0) < minViewCount)
+    : [];
+  const includedRows = minViewCount > 0
+    ? rows.filter(row => Number(row.interactionValue || 0) >= minViewCount)
+    : rows;
   if (!rows.length) {
     throw new Error(`all_bilibili_requests_failed: ${errors.map(item => `${item.bvid}:${item.error}`).join("; ")}`);
   }
-  rows.sort((a, b) => b.interactionValue - a.interactionValue || a.title.localeCompare(b.title, "zh-CN"));
-  rows.forEach((row, index) => {
+  if (!includedRows.length) {
+    throw new Error(`all_bilibili_requests_below_min_view_count:${minViewCount}`);
+  }
+  includedRows.sort((a, b) => b.interactionValue - a.interactionValue || a.title.localeCompare(b.title, "zh-CN"));
+  includedRows.forEach((row, index) => {
     row.rank = index + 1;
     row.periodId = PERIOD_ID;
     row.periodLabel = PERIOD_LABEL;
@@ -113,11 +147,12 @@ async function collectState(site) {
     currentPeriodId: PERIOD_ID,
     sourceUrl: "https://www.bilibili.com/",
     errors,
+    excluded,
     periods: [{
       periodId: PERIOD_ID,
       periodLabel: PERIOD_LABEL,
       targetValueInt: 0,
-      rows,
+      rows: includedRows,
     }],
   };
 }
@@ -161,6 +196,7 @@ function printSummary(state, uploadResult) {
       like: top.like,
     } : null,
     errors: state.errors,
+    excludedCount: Array.isArray(state.excluded) ? state.excluded.length : 0,
     upload: uploadResult && uploadResult.result || null,
   }, null, 2));
 }
