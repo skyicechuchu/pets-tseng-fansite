@@ -863,7 +863,7 @@ async function weiboHistory(env, limit, periodId) {
 }
 
 async function bilibiliLatest(env) {
-  const row = await latestRowWithState(env, bilibiliState);
+  const row = await latestRowWithState(env, bilibiliState, BILIBILI_STATE_MARKER);
   return {
     ok: true,
     source: "worker",
@@ -879,8 +879,8 @@ async function bilibiliLatest(env) {
 
 async function bilibiliHistory(env, limit, periodId) {
   const rows = await env.DB.prepare(
-    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT ?"
-  ).bind(limit).all();
+    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots WHERE raw_json LIKE ? ORDER BY captured_ms DESC LIMIT ?"
+  ).bind(BILIBILI_STATE_MARKER, limit).all();
   const snapshots = (rows.results || [])
     .reverse()
     .map(row => bilibiliState(parseStoredState(row.raw_json)))
@@ -1182,10 +1182,23 @@ async function ingestBilibili(request, env) {
       "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
     ).bind(capturedMs, currentPeriodId, JSON.stringify(stored), row.id).run();
   } else {
-    await db.prepare(
-      "INSERT INTO snapshots (captured_at, captured_ms, current_period_id, raw_json) VALUES (?, ?, ?, ?)"
-    ).bind(capturedAt, capturedMs, currentPeriodId, JSON.stringify(stored)).run();
-    row = await db.prepare("SELECT id FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
+    try {
+      await db.prepare(
+        "INSERT INTO snapshots (captured_at, captured_ms, current_period_id, raw_json) VALUES (?, ?, ?, ?)"
+      ).bind(capturedAt, capturedMs, currentPeriodId, JSON.stringify(stored)).run();
+      row = await db.prepare("SELECT id FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+      row = await db.prepare(
+        "SELECT id, current_period_id, raw_json FROM snapshots WHERE captured_at = ?"
+      ).bind(capturedAt).first();
+      stored = mergeStoredBilibili(row, state, capturedAt);
+      const mergedCampaign = campaignState(stored);
+      const mergedPeriodId = mergedCampaign ? mergedCampaign.currentPeriodId : state.currentPeriodId;
+      await db.prepare(
+        "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
+      ).bind(capturedMs, mergedPeriodId, JSON.stringify(stored), row.id).run();
+    }
   }
   await pruneOldSnapshots(env);
 
@@ -1199,13 +1212,46 @@ async function ingestBilibili(request, env) {
   };
 }
 
-async function latestRowWithState(env, pick) {
+const BILIBILI_STATE_MARKER = '%"bilibili":{"updatedAt"%';
+
+async function latestRowWithState(env, pick, marker) {
+  if (marker) {
+    const row = await env.DB.prepare(
+      "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots WHERE raw_json LIKE ? ORDER BY captured_ms DESC LIMIT 1"
+    ).bind(marker).first();
+    if (row && pick(parseStoredState(row.raw_json))) return row;
+  }
   const rows = await env.DB.prepare(
-    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT 50"
+    "SELECT id, captured_at, captured_ms, current_period_id, raw_json FROM snapshots ORDER BY captured_ms DESC LIMIT 500"
   ).all();
   const row = (rows.results || []).find(item => pick(parseStoredState(item.raw_json)));
   if (!row) throw httpError("no_snapshot_yet", 404);
   return row;
+}
+
+function isUniqueConstraintError(err) {
+  return /UNIQUE constraint failed|SQLITE_CONSTRAINT/i.test(String(err && (err.message || err)));
+}
+
+function mergeStoredBilibili(row, state, capturedAt) {
+  let stored = {
+    updatedAt: capturedAt,
+    campaign: null,
+    hotVote: null,
+    errors: {},
+  };
+  if (row && row.raw_json) {
+    try {
+      stored = parseStoredState(row.raw_json);
+    } catch (err) {
+      stored.errors = Object.assign({}, stored.errors, { parse: err.message });
+    }
+  }
+  stored.updatedAt = capturedAt;
+  stored.bilibili = state;
+  if (!stored.errors) stored.errors = {};
+  stored.errors.bilibili = null;
+  return stored;
 }
 
 async function health(env) {
@@ -1237,7 +1283,7 @@ async function health(env) {
       latestWeibo = null;
     }
     try {
-      const row = await latestRowWithState(env, bilibiliState);
+      const row = await latestRowWithState(env, bilibiliState, BILIBILI_STATE_MARKER);
       latestBilibili = {
         captured_at: row.captured_at,
         captured_ms: row.captured_ms,
