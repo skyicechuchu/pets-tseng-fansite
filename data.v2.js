@@ -161,6 +161,16 @@ const SITE = {
       sourceUrl: "https://m.weibo.cn/c/wbox?id=l331zrkexk&cid=1334",
       refreshMs: 300000,
     },
+    weiboSuperlike: {
+      targetName: "曾沛慈",
+      collectionEnabled: true,
+      sourceUrl: "https://weibo.com/p/1008081a9bfa740ec7181f9ce077ab08e96746",
+      pageId: "1008081a9bfa740ec7181f9ce077ab08e96746",
+      topicId: "1022:1008081a9bfa740ec7181f9ce077ab08e96746",
+      tagId: "5294454512156724",
+      refreshMs: 1800000,
+      historyUrl: "data/weibo-superlike-history.json",
+    },
     bilibili: {
       collectionEnabled: true,
       sourceUrl: "https://www.bilibili.com/",

@@ -16,6 +16,9 @@ const HISTORY_BUCKET_MS = 60 * 1000;
 const BILIBILI_PERIOD_ID = 20260623;
 const BILIBILI_PERIOD_LABEL = "B站舞台数据";
 const BILIBILI_DEFAULT_REFRESH_MS = 5 * 60 * 1000;
+const WEIBO_SUPERLIKE_PERIOD_ID = 20260626;
+const WEIBO_SUPERLIKE_PERIOD_LABEL = "曾沛慈超话";
+const WEIBO_SUPERLIKE_DEFAULT_REFRESH_MS = 30 * 60 * 1000;
 const DEFAULT_BILIBILI_VIDEOS = [
   { bvid: "BV1nuDgBREJE", title: "一个人想着一个人", owner: "曾沛慈_TsengPets", performers: ["曾沛慈"] },
   { bvid: "BV1rqQcBqEmk", title: "一半一半", owner: "曾沛慈_TsengPets", performers: ["曾沛慈", "淡淡", "黄灿灿"] },
@@ -98,9 +101,12 @@ async function handleRequest(request, env) {
           "/hot/history?limit=720",
           "/weibo/latest",
           "/weibo/history?limit=720",
+          "/weibo-superlike/latest",
+          "/weibo-superlike/history?limit=720",
           "/bilibili/latest",
           "/bilibili/live",
           "/bilibili/history?limit=720",
+          "/admin/weibo-superlike/ingest",
           "/admin/bilibili/ingest",
         ],
       }, cors);
@@ -140,6 +146,16 @@ async function handleRequest(request, env) {
       return json(await weiboHistory(env, limit, periodId, historyRange(url)), cors);
     }
 
+    if (request.method === "GET" && url.pathname === "/weibo-superlike/latest") {
+      return json(await weiboSuperlikeLatest(env), cors);
+    }
+
+    if (request.method === "GET" && url.pathname === "/weibo-superlike/history") {
+      const limit = clampInt(url.searchParams.get("limit"), 2, MAX_HISTORY_LIMIT, 720);
+      const periodId = url.searchParams.get("periodId");
+      return json(await weiboSuperlikeHistory(env, limit, periodId, historyRange(url)), cors);
+    }
+
     if (request.method === "GET" && url.pathname === "/bilibili/latest") {
       return json(await bilibiliLatest(env), cors);
     }
@@ -170,6 +186,12 @@ async function handleRequest(request, env) {
       return json({ ok: true, result }, cors);
     }
 
+    if (request.method === "POST" && url.pathname === "/admin/weibo-superlike/ingest") {
+      requireAdmin(request, env);
+      const result = await ingestWeiboSuperlike(request, env);
+      return json({ ok: true, result }, cors);
+    }
+
     if (request.method === "POST" && url.pathname === "/admin/bilibili/ingest") {
       requireAdmin(request, env);
       const result = await ingestBilibili(request, env);
@@ -191,6 +213,8 @@ function config(env) {
     stageCollectionEnabled: env.STAGE_COLLECTION_ENABLED !== "false",
     hotVoteCollectionEnabled: env.HOT_VOTE_COLLECTION_ENABLED !== "false",
     weiboStageCollectionEnabled: env.WEIBO_STAGE_COLLECTION_ENABLED !== "false",
+    weiboSuperlikeCollectionEnabled: env.WEIBO_SUPERLIKE_COLLECTION_ENABLED !== "false",
+    weiboSuperlikeRefreshMs: Number(env.WEIBO_SUPERLIKE_REFRESH_MS || WEIBO_SUPERLIKE_DEFAULT_REFRESH_MS),
     bilibiliCollectionEnabled: env.BILIBILI_COLLECTION_ENABLED !== "false",
     bilibiliWorkerFetchEnabled: env.BILIBILI_WORKER_FETCH_ENABLED === "true",
     bilibiliRefreshMs: Number(env.BILIBILI_REFRESH_MS || BILIBILI_DEFAULT_REFRESH_MS),
@@ -680,11 +704,15 @@ async function loadSnapshotBundle(env) {
           ? (bilibili.status === "rejected" ? bilibili.reason.message : null)
           : (cfg.bilibiliWorkerFetchEnabled ? "bilibili_waiting_next_5m_bucket" : "bilibili_local_ingest_only"))
         : "bilibili_collection_disabled",
+      weiboSuperlike: cfg.weiboSuperlikeCollectionEnabled
+        ? "weibo_superlike_local_ingest_only"
+        : "weibo_superlike_collection_disabled",
     },
     collection: {
       stage: cfg.stageCollectionEnabled,
       hotVote: cfg.hotVoteCollectionEnabled,
       weiboStage: cfg.weiboStageCollectionEnabled,
+      weiboSuperlike: cfg.weiboSuperlikeCollectionEnabled,
       bilibili: cfg.bilibiliCollectionEnabled,
       bilibiliDue: collectBilibili,
       bilibiliWorkerFetch: cfg.bilibiliWorkerFetchEnabled,
@@ -699,7 +727,7 @@ async function loadSnapshotBundle(env) {
 
 function parseStoredState(rawJson) {
   const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
-  if (parsed && (parsed.campaign || parsed.hotVote || parsed.weiboStage || parsed.bilibili)) return parsed;
+  if (parsed && (parsed.campaign || parsed.hotVote || parsed.weiboStage || parsed.weiboSuperlike || parsed.bilibili)) return parsed;
   return {
     updatedAt: parsed && parsed.updatedAt,
     currentPeriodId: parsed && parsed.currentPeriodId,
@@ -707,6 +735,7 @@ function parseStoredState(rawJson) {
     campaign: parsed || null,
     hotVote: parsed && parsed.hotVote || null,
     weiboStage: parsed && parsed.weiboStage || null,
+    weiboSuperlike: parsed && parsed.weiboSuperlike || null,
     bilibili: parsed && parsed.bilibili || null,
     errors: {},
   };
@@ -722,6 +751,10 @@ function hotVoteState(stored) {
 
 function weiboStageState(stored) {
   return stored && stored.weiboStage || null;
+}
+
+function weiboSuperlikeState(stored) {
+  return stored && stored.weiboSuperlike || null;
 }
 
 function bilibiliState(stored) {
@@ -752,6 +785,7 @@ async function collectAndStore(env) {
     try {
       const existing = parseStoredState(row.raw_json);
       if (existing.weiboStage && !state.weiboStage) state.weiboStage = existing.weiboStage;
+      if (existing.weiboSuperlike && !state.weiboSuperlike) state.weiboSuperlike = existing.weiboSuperlike;
       if (existing.bilibili && !state.bilibili) state.bilibili = existing.bilibili;
     } catch (err) {
       // Existing malformed raw JSON should not block a fresh MGTV snapshot.
@@ -800,6 +834,7 @@ async function collectAndStore(env) {
     currentPeriodId: campaign ? campaign.currentPeriodId : null,
     periodCount: campaign ? campaign.periods.length : 0,
     hotVoteCount: state.hotVote && state.hotVote.periods[0] ? state.hotVote.periods[0].rows.length : 0,
+    weiboSuperlikeCount: state.weiboSuperlike && state.weiboSuperlike.periods[0] ? state.weiboSuperlike.periods[0].rows[0].interactionValue : 0,
     bilibiliCount: state.bilibili && state.bilibili.periods[0] ? state.bilibili.periods[0].rows.length : 0,
     errors: state.errors,
     collection: state.collection,
@@ -807,6 +842,7 @@ async function collectAndStore(env) {
     stageCollectionEnabled: config(env).stageCollectionEnabled,
     hotVoteCollectionEnabled: config(env).hotVoteCollectionEnabled,
     weiboStageCollectionEnabled: config(env).weiboStageCollectionEnabled,
+    weiboSuperlikeCollectionEnabled: config(env).weiboSuperlikeCollectionEnabled,
     bilibiliCollectionEnabled: config(env).bilibiliCollectionEnabled,
   };
 }
@@ -917,6 +953,40 @@ async function weiboHistory(env, limit, periodId, range) {
     snapshots: cleaned,
     meta: {
       count: cleaned.length,
+      limit,
+      range,
+      periodId: periodId ? Number(periodId) : null,
+    },
+  };
+}
+
+async function weiboSuperlikeLatest(env) {
+  const row = await latestRowWithState(env, weiboSuperlikeState, WEIBO_SUPERLIKE_STATE_MARKER);
+  return {
+    ok: true,
+    source: "worker",
+    state: weiboSuperlikeState(parseStoredState(row.raw_json)),
+    meta: {
+      latestSnapshotId: row.id,
+      capturedAt: row.captured_at,
+      capturedMs: row.captured_ms,
+      currentPeriodId: row.current_period_id,
+    },
+  };
+}
+
+async function weiboSuperlikeHistory(env, limit, periodId, range) {
+  const rows = await snapshotRows(env, limit, range, WEIBO_SUPERLIKE_STATE_MARKER);
+  const snapshots = rows
+    .reverse()
+    .map(row => monitorSnapshotFromRow(row, weiboSuperlikeState, periodId))
+    .filter(Boolean);
+  return {
+    ok: true,
+    source: "worker",
+    snapshots,
+    meta: {
+      count: snapshots.length,
       limit,
       range,
       periodId: periodId ? Number(periodId) : null,
@@ -1109,6 +1179,150 @@ async function ingestWeiboStage(request, env) {
   };
 }
 
+function parseMetricNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const text = String(value || "").replace(/,/g, "").trim();
+  if (!text) return 0;
+  const match = text.match(/([\d.]+)\s*(亿|万)?/);
+  if (!match) return 0;
+  const base = Number(match[1]);
+  if (!Number.isFinite(base)) return 0;
+  const unit = match[2] || "";
+  if (unit === "亿") return Math.round(base * 100000000);
+  if (unit === "万") return Math.round(base * 10000);
+  return Math.round(base);
+}
+
+function normalizeWeiboSuperlikeState(payload, env) {
+  const raw = payload && (payload.state || payload.weiboSuperlike || payload.snapshot || payload);
+  if (!raw) throw httpError("empty_payload", 400);
+  const updatedAt = minuteBucket(raw.updatedAt || raw.iso || new Date());
+  const topicName = String(raw.topicName || raw.title || env.WEIBO_SUPERLIKE_TOPIC_NAME || DEFAULTS.targetName || "曾沛慈").trim();
+  const sourceUrl = raw.sourceUrl || env.WEIBO_SUPERLIKE_SOURCE_URL || `https://weibo.com/p/${raw.pageId || "1008081a9bfa740ec7181f9ce077ab08e96746"}`;
+  const count = parseMetricNumber(
+    raw.superLikeCount != null ? raw.superLikeCount :
+      raw.interactionValue != null ? raw.interactionValue :
+        raw.value != null ? raw.value :
+          raw.count
+  );
+  if (!count) throw httpError("missing_superlike_count", 400);
+
+  const signInCount = parseMetricNumber(raw.signInCount || raw.checkinCount || raw.todayCheckin || 0);
+  const fansCount = parseMetricNumber(raw.fansCount || raw.followersCount || raw.followCount || 0);
+  const postsCount = parseMetricNumber(raw.postsCount || raw.postCount || 0);
+  const tagPostCount = parseMetricNumber(raw.tagPostCount || raw.superLikePostCount || 0);
+  const labelText = raw.labelText || raw.rawLabel || `超LIKE ${count}人`;
+
+  return {
+    updatedAt,
+    currentPeriodId: Number(raw.currentPeriodId || raw.periodId || WEIBO_SUPERLIKE_PERIOD_ID),
+    sourceUrl,
+    topicName,
+    pageId: raw.pageId || "",
+    topicId: raw.topicId || "",
+    tagId: raw.tagId || "",
+    labelText,
+    signInCount,
+    fansCount,
+    postsCount,
+    tagPostCount,
+    periods: [{
+      periodId: Number(raw.currentPeriodId || raw.periodId || WEIBO_SUPERLIKE_PERIOD_ID),
+      periodLabel: raw.periodLabel || WEIBO_SUPERLIKE_PERIOD_LABEL,
+      targetValueInt: 0,
+      rows: [{
+        rank: 1,
+        title: raw.rowTitle || "超LIKE人数",
+        guest: topicName,
+        interactionValue: count,
+        roundAmount: signInCount,
+        onScreenCount: fansCount,
+        cid: raw.topicId || "",
+        coverId: raw.tagId || "superlike",
+        coverUrl: raw.coverUrl || "",
+        isTarget: true,
+        key: `${Number(raw.currentPeriodId || raw.periodId || WEIBO_SUPERLIKE_PERIOD_ID)}:superlike`,
+        periodId: Number(raw.currentPeriodId || raw.periodId || WEIBO_SUPERLIKE_PERIOD_ID),
+        periodLabel: raw.periodLabel || WEIBO_SUPERLIKE_PERIOD_LABEL,
+        superLikeCount: count,
+        signInCount,
+        fansCount,
+        postsCount,
+        tagPostCount,
+        labelText,
+      }],
+    }],
+  };
+}
+
+async function ingestWeiboSuperlike(request, env) {
+  if (!config(env).weiboSuperlikeCollectionEnabled) {
+    throw httpError("weibo_superlike_collection_disabled", 409);
+  }
+  const payload = await request.json().catch(() => null);
+  const state = normalizeWeiboSuperlikeState(payload, env);
+  const capturedAt = state.updatedAt;
+  const capturedMs = Date.parse(capturedAt);
+  const db = env.DB;
+  let row = await db.prepare(
+    "SELECT id, current_period_id, raw_json FROM snapshots WHERE captured_at = ?"
+  ).bind(capturedAt).first();
+
+  let stored = {
+    updatedAt: capturedAt,
+    campaign: null,
+    hotVote: null,
+    errors: {},
+  };
+  if (row && row.raw_json) {
+    try {
+      stored = parseStoredState(row.raw_json);
+    } catch (err) {
+      stored = Object.assign(stored, { errors: { parse: err.message } });
+    }
+  }
+  stored.updatedAt = capturedAt;
+  stored.weiboSuperlike = state;
+  if (!stored.errors) stored.errors = {};
+  stored.errors.weiboSuperlike = null;
+  const campaign = campaignState(stored);
+  const currentPeriodId = campaign ? campaign.currentPeriodId : state.currentPeriodId;
+
+  if (row) {
+    await db.prepare(
+      "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
+    ).bind(capturedMs, currentPeriodId, JSON.stringify(stored), row.id).run();
+  } else {
+    try {
+      await db.prepare(
+        "INSERT INTO snapshots (captured_at, captured_ms, current_period_id, raw_json) VALUES (?, ?, ?, ?)"
+      ).bind(capturedAt, capturedMs, currentPeriodId, JSON.stringify(stored)).run();
+      row = await db.prepare("SELECT id FROM snapshots WHERE captured_at = ?").bind(capturedAt).first();
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+      row = await db.prepare(
+        "SELECT id, current_period_id, raw_json FROM snapshots WHERE captured_at = ?"
+      ).bind(capturedAt).first();
+      stored = mergeStoredWeiboSuperlike(row, state, capturedAt);
+      const mergedCampaign = campaignState(stored);
+      const mergedPeriodId = mergedCampaign ? mergedCampaign.currentPeriodId : state.currentPeriodId;
+      await db.prepare(
+        "UPDATE snapshots SET captured_ms = ?, current_period_id = ?, raw_json = ? WHERE id = ?"
+      ).bind(capturedMs, mergedPeriodId, JSON.stringify(stored), row.id).run();
+    }
+  }
+  await pruneOldSnapshots(env);
+
+  return {
+    capturedAt,
+    snapshotId: row && row.id,
+    currentPeriodId: state.currentPeriodId,
+    superLikeCount: state.periods[0].rows[0].interactionValue,
+    signInCount: state.signInCount,
+    fansCount: state.fansCount,
+  };
+}
+
 function normalizeBilibiliIngestRow(row, index, periodId, periodLabel, targetName) {
   const bvid = String(row.bvid || row.coverId || "").trim();
   const title = String(row.title || row.name || row.biliTitle || bvid || `视频 ${index + 1}`).trim();
@@ -1272,6 +1486,7 @@ async function ingestBilibili(request, env) {
   };
 }
 
+const WEIBO_SUPERLIKE_STATE_MARKER = '%"weiboSuperlike":{"updatedAt"%';
 const BILIBILI_STATE_MARKER = '%"bilibili":{"updatedAt"%';
 
 async function latestRowWithState(env, pick, marker) {
@@ -1314,6 +1529,27 @@ function mergeStoredBilibili(row, state, capturedAt) {
   return stored;
 }
 
+function mergeStoredWeiboSuperlike(row, state, capturedAt) {
+  let stored = {
+    updatedAt: capturedAt,
+    campaign: null,
+    hotVote: null,
+    errors: {},
+  };
+  if (row && row.raw_json) {
+    try {
+      stored = parseStoredState(row.raw_json);
+    } catch (err) {
+      stored.errors = Object.assign({}, stored.errors, { parse: err.message });
+    }
+  }
+  stored.updatedAt = capturedAt;
+  stored.weiboSuperlike = state;
+  if (!stored.errors) stored.errors = {};
+  stored.errors.weiboSuperlike = null;
+  return stored;
+}
+
 async function health(env) {
   const cfg = config(env);
   const latestRow = await env.DB.prepare(
@@ -1322,6 +1558,7 @@ async function health(env) {
   const countRow = await env.DB.prepare("SELECT COUNT(*) AS count FROM snapshots").first();
   let latestHot = null;
   let latestWeibo = null;
+  let latestWeiboSuperlike = null;
   let latestBilibili = null;
   if (latestRow) {
     try {
@@ -1343,6 +1580,15 @@ async function health(env) {
       latestWeibo = null;
     }
     try {
+      const row = await latestRowWithState(env, weiboSuperlikeState, WEIBO_SUPERLIKE_STATE_MARKER);
+      latestWeiboSuperlike = {
+        captured_at: row.captured_at,
+        captured_ms: row.captured_ms,
+      };
+    } catch (err) {
+      latestWeiboSuperlike = null;
+    }
+    try {
       const row = await latestRowWithState(env, bilibiliState, BILIBILI_STATE_MARKER);
       latestBilibili = {
         captured_at: row.captured_at,
@@ -1359,11 +1605,13 @@ async function health(env) {
     latest: latestRow || null,
     hotVote: latestHot,
     weiboStage: latestWeibo,
+    weiboSuperlike: latestWeiboSuperlike,
     bilibili: latestBilibili,
     collection: {
       stage: cfg.stageCollectionEnabled,
       hotVote: cfg.hotVoteCollectionEnabled,
       weiboStage: cfg.weiboStageCollectionEnabled,
+      weiboSuperlike: cfg.weiboSuperlikeCollectionEnabled,
       bilibili: cfg.bilibiliCollectionEnabled,
       bilibiliWorkerFetch: cfg.bilibiliWorkerFetchEnabled,
     },
@@ -1390,6 +1638,12 @@ function stateToMonitorSnapshot(state, periodId) {
         awkwardValue: row.awkwardValue,
         status: row.status,
         coverUrl: row.coverUrl,
+        superLikeCount: row.superLikeCount,
+        signInCount: row.signInCount,
+        fansCount: row.fansCount,
+        postsCount: row.postsCount,
+        tagPostCount: row.tagPostCount,
+        labelText: row.labelText,
         bvid: row.bvid,
         url: row.url,
         biliTitle: row.biliTitle,

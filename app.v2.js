@@ -385,6 +385,7 @@ let dashboardRefreshTimer = null;
 let dashboardState = null;
 let dashboardHotState = null;
 let dashboardWeiboStageState = null;
+let dashboardWeiboSuperlikeState = null;
 let dashboardBilibiliState = null;
 let dashboardSelectedPeriodId = null;
 let dashboardHashAligned = false;
@@ -477,6 +478,19 @@ const MONITOR_DATASETS = {
     displayUnit: "万",
     highlightTitles: ["心引力", "怎么说我不爱你"],
   },
+  weiboSuperlike: {
+    key: "weiboSuperlike",
+    label: "微博超LIKE",
+    title: "曾沛慈超话超LIKE人数走势",
+    emptyName: "微博超LIKE",
+    historyPath: "/weibo-superlike/history",
+    latestPath: "/weibo-superlike/latest",
+    sourceConfigKey: "weiboSuperlike",
+    valueLabel: "指标",
+    yAxisLabel: "超LIKE人数",
+    sourceLabel: "曾沛慈超话",
+    sourceUrlKey: "sourceUrl",
+  },
   bilibili: {
     key: "bilibili",
     label: "B站播放",
@@ -512,6 +526,7 @@ function monitorDatasetEnabled(c, dataset) {
   if (dataset.key === "hot") return Boolean(c && c.mgtv && c.mgtv.hotVoteCollectionEnabled === true);
   if (dataset.key === "stage") return Boolean(c && c.mgtv && c.mgtv.stageCollectionEnabled === true);
   if (dataset.key === "weibo") return Boolean(c && c.weiboStage && c.weiboStage.collectionEnabled === true);
+  if (dataset.key === "weiboSuperlike") return Boolean(c && c.weiboSuperlike && c.weiboSuperlike.collectionEnabled === true);
   if (dataset.key === "bilibili") return Boolean(c && c.bilibili && c.bilibili.collectionEnabled === true);
   return true;
 }
@@ -560,6 +575,7 @@ function monitorHistorySourceLabel() {
 function collectionSwitches(c) {
   const mgtv = c && c.mgtv || {};
   const weibo = c && c.weiboStage || {};
+  const weiboSuperlike = c && c.weiboSuperlike || {};
   return [
     {
       key: "hot",
@@ -581,6 +597,13 @@ function collectionSwitches(c) {
       enabled: weibo.collectionEnabled === true,
       visible: weibo.collectionEnabled === true,
       note: "本地脚本",
+    },
+    {
+      key: "weiboSuperlike",
+      label: "微博超LIKE人数",
+      enabled: weiboSuperlike.collectionEnabled === true,
+      visible: weiboSuperlike.collectionEnabled === true,
+      note: "30 分钟",
     },
     {
       key: "bilibili",
@@ -799,6 +822,12 @@ function hydrateMgtvState(raw, source, meta) {
       interactionValue: Number(row.interactionValue || 0),
       roundAmount: Number(row.roundAmount || 0),
       onScreenCount: Number(row.onScreenCount || 0),
+      superLikeCount: Number(row.superLikeCount || row.interactionValue || 0),
+      signInCount: Number(row.signInCount || row.roundAmount || 0),
+      fansCount: Number(row.fansCount || row.onScreenCount || 0),
+      postsCount: Number(row.postsCount || 0),
+      tagPostCount: Number(row.tagPostCount || 0),
+      labelText: row.labelText || "",
       isTarget: Boolean(row.isTarget),
     })),
   }));
@@ -911,6 +940,10 @@ async function loadWorkerWeiboStageDashboardData(campaign) {
   const json = await fetchWorkerJson("/weibo/latest", {}, campaign.mgtv);
   return hydrateMgtvState(json.state || {}, "worker", json.meta);
 }
+async function loadWorkerWeiboSuperlikeDashboardData(campaign) {
+  const json = await fetchWorkerJson("/weibo-superlike/latest", {}, campaign.mgtv);
+  return hydrateMgtvState(json.state || {}, "worker", json.meta);
+}
 function hydrateBilibiliState(raw, source, meta) {
   const periods = (raw.periods || []).map(period => Object.assign({}, period, {
     periodId: Number(period.periodId),
@@ -983,6 +1016,16 @@ async function loadWeiboStageDashboardData(campaign) {
     return await loadWorkerWeiboStageDashboardData(campaign);
   } catch (err) {
     console.warn("公演舞台限时推荐数据暂时不可用", err);
+    return null;
+  }
+}
+async function loadWeiboSuperlikeDashboardData(campaign) {
+  if (!campaign || !campaign.weiboSuperlike || campaign.weiboSuperlike.collectionEnabled !== true) return null;
+  if (!workerApiBase(campaign.mgtv)) return null;
+  try {
+    return await loadWorkerWeiboSuperlikeDashboardData(campaign);
+  } catch (err) {
+    console.warn("微博超LIKE人数暂时不可用", err);
     return null;
   }
 }
@@ -1290,6 +1333,40 @@ function renderWeiboStageDashboardSection(c, weiboState) {
       </div>
     </section>`;
 }
+function renderWeiboSuperlikeDashboardSection(c, superState) {
+  const cfg = c.weiboSuperlike || {};
+  const period = superState && superState.periods && superState.periods[0];
+  const row = period && period.rows && period.rows[0];
+  if (!row) return "";
+  const updated = formatBeijingClock(superState.updatedAt);
+  const sourceLink = cfg.sourceUrl
+    ? `<a href="${esc(cfg.sourceUrl)}" target="_blank" rel="noopener noreferrer"
+          class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">曾沛慈超话 ${ICON.external}</a>`
+    : "";
+  const stats = [
+    { label: "超LIKE人数", value: fmtInt(row.interactionValue), note: row.labelText || "顶部 tag 人数" },
+    { label: "今日签到", value: row.roundAmount ? `${fmtInt(row.roundAmount)} 人` : "--", note: "微博超话公开头部数据" },
+    { label: "超话粉丝", value: row.onScreenCount ? fmtCompact(row.onScreenCount) : "--", note: cfg.targetName || row.guest || "曾沛慈" },
+    { label: "采样频率", value: "30 分钟", note: `最近 ${updated}` },
+  ].map(item => `
+    <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+      <p class="text-sm text-gray-500">${esc(item.label)}</p>
+      <p class="mt-1 font-display text-3xl text-brand-600">${esc(item.value)}</p>
+      <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
+    </div>`).join("");
+
+  return `
+    <section class="mb-10">
+      <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 class="font-display text-2xl text-brand-600">微博超LIKE人数</h3>
+          <p class="mt-1 text-sm text-gray-500">最近采样 ${esc(updated)} 北京时间 · 低频追踪超话活跃人数</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">${sourceLink}</div>
+      </div>
+      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
+    </section>`;
+}
 function renderBilibiliDashboardSection(c, biliState) {
   const cfg = c.bilibili || {};
   const period = biliState && biliState.periods && biliState.periods[0];
@@ -1401,7 +1478,7 @@ function renderBilibiliDashboardSection(c, biliState) {
       </div>
     </section>`;
 }
-function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, weiboState, biliState) {
+function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, weiboState, weiboSuperlikeState, biliState) {
   const mgtv = c.mgtv;
   const periods = state.periods || [];
   const selected = mgtv.stageCollectionEnabled === true
@@ -1430,6 +1507,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
   const collectionStatus = renderCollectionStatus(c);
   const hotVoteSection = renderHotVoteDashboardSection(c, hotState);
   const weiboStageSection = renderWeiboStageDashboardSection(c, weiboState);
+  const weiboSuperlikeSection = renderWeiboSuperlikeDashboardSection(c, weiboSuperlikeState);
   const bilibiliSection = renderBilibiliDashboardSection(c, biliState);
 
   const stats = showStage ? [
@@ -1554,6 +1632,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
         ${collectionStatus}
 
         ${bilibiliSection}
+        ${weiboSuperlikeSection}
         ${hotVoteSection}
         ${weiboStageSection}
         ${stageSection}
@@ -1574,7 +1653,7 @@ function alignDashboardHash() {
 }
 function attachMgtvDashboardHandlers(c, state) {
   document.querySelectorAll("[data-period-id]").forEach(btn => {
-    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState, dashboardWeiboStageState, dashboardBilibiliState));
+    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState, dashboardWeiboStageState, dashboardWeiboSuperlikeState, dashboardBilibiliState));
   });
   const refresh = document.querySelector("[data-mgtv-refresh]");
   if (refresh) refresh.addEventListener("click", () => loadAndRenderMgtvDashboard(c, dashboardSelectedPeriodId));
@@ -1767,23 +1846,25 @@ function scheduleMgtvRefresh(c) {
 async function loadAndRenderMgtvDashboard(c, preferredPeriodId, silent) {
   if (!silent) renderDashboardLoading(c);
   try {
-    const [state, hotState, weiboStageState, bilibiliState] = await Promise.all([
+    const [state, hotState, weiboStageState, weiboSuperlikeState, bilibiliState] = await Promise.all([
       loadMgtvDashboardData(c),
       loadHotVoteDashboardData(c),
       loadWeiboStageDashboardData(c),
+      loadWeiboSuperlikeDashboardData(c),
       loadBilibiliDashboardData(c),
     ]);
     dashboardState = state;
     dashboardHotState = hotState || dashboardHotState;
     dashboardWeiboStageState = weiboStageState || dashboardWeiboStageState;
+    dashboardWeiboSuperlikeState = weiboSuperlikeState || dashboardWeiboSuperlikeState;
     dashboardBilibiliState = bilibiliState || dashboardBilibiliState;
     recordMgtvMonitorSnapshot(state);
     const selected = preferredPeriodId || state.currentPeriodId || (state.periods[0] && state.periods[0].periodId);
-    renderMgtvDashboard(c, state, selected, null, dashboardHotState, dashboardWeiboStageState, dashboardBilibiliState);
+    renderMgtvDashboard(c, state, selected, null, dashboardHotState, dashboardWeiboStageState, dashboardWeiboSuperlikeState, dashboardBilibiliState);
     scheduleMgtvRefresh(c);
   } catch (err) {
     if (dashboardState && silent) {
-      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState, dashboardWeiboStageState, dashboardBilibiliState);
+      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState, dashboardWeiboStageState, dashboardWeiboSuperlikeState, dashboardBilibiliState);
     } else {
       renderDashboardError(c, err);
     }
@@ -1844,6 +1925,11 @@ function hydrateMonitorSnapshot(snapshot) {
       onScreenCount: Number(row.onScreenCount || 0),
       hotValue: Number(row.hotValue || 0),
       awkwardValue: Number(row.awkwardValue || 0),
+      superLikeCount: Number(row.superLikeCount || row.interactionValue || 0),
+      signInCount: Number(row.signInCount || row.roundAmount || 0),
+      fansCount: Number(row.fansCount || row.onScreenCount || 0),
+      postsCount: Number(row.postsCount || 0),
+      tagPostCount: Number(row.tagPostCount || 0),
       like: Number(row.like || row.roundAmount || 0),
       favorite: Number(row.favorite || row.onScreenCount || 0),
       coin: Number(row.coin || 0),
@@ -2460,6 +2546,7 @@ function renderMonitorEmpty(c, history) {
   const hasWorker = Boolean(workerApiBase(c.mgtv)) && !dataset.localConfigKey;
   const hasError = monitorHistoryStatus.ok === false;
   const rangeEmpty = !hasError && monitorWindowMode === "custom";
+  const refreshMinutes = Math.max(1, Math.round(monitorRefreshMs(c, dataset) / 60000));
   const message = rangeEmpty
     ? `所选时间范围内暂时没有${dataset.emptyName}快照。可以扩大时间范围，或等待后台下一次采样后页面自动重读。`
     : hasError && dataset.localConfigKey
@@ -2469,7 +2556,7 @@ function renderMonitorEmpty(c, history) {
       : dataset.localConfigKey
         ? `本地采集器正在建立${dataset.emptyName}时间序列，已返回 ${samples} 个快照。跑满 2-3 分钟后就能看到增量。`
         : hasWorker
-          ? `后台采集器正在建立${dataset.emptyName}时间序列，已返回 ${samples} 个快照。部署后通常等 2-3 分钟就能看到增量。`
+          ? `后台采集器正在建立${dataset.emptyName}时间序列，已返回 ${samples} 个快照。采样间隔约 ${refreshMinutes} 分钟；跑完一次真实采样后就能看到增量。`
           : `正在等待实时数据同步。页面打开后会自动记录时间序列，已记录 ${samples} 个快照。`;
   const datasetTabs = monitorDatasetTabs(c);
   const collectionStatus = renderCollectionStatus(c);
