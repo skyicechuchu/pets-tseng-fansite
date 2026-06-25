@@ -120,11 +120,19 @@ function cropScreenshot(imagePath) {
 }
 
 function pageScheme(site) {
+  return pageSchemes(site)[0];
+}
+
+function pageSchemes(site) {
   const cfg = site.campaign && site.campaign.weiboSuperlike || {};
   const pageId = process.env.WEIBO_SUPERLIKE_PAGE_ID || cfg.pageId || DEFAULT_PAGE_ID;
   const tagId = process.env.WEIBO_SUPERLIKE_TAG_ID || cfg.tagId || DEFAULT_TAG_ID;
-  return process.env.WEIBO_SUPERLIKE_ANDROID_SCHEME ||
-    `sinaweibo://pageinfo?containerid=${pageId}__${tagId}_-_tag_comment_sort`;
+  if (process.env.WEIBO_SUPERLIKE_ANDROID_SCHEME) return [process.env.WEIBO_SUPERLIKE_ANDROID_SCHEME];
+  return [
+    `sinaweibo://pageinfo?containerid=${pageId}__${tagId}_-_tag_comment_sort`,
+    `sinaweibo://pageinfo?containerid=${pageId}&extparam=${encodeURIComponent("曾沛慈")}`,
+    `sinaweibo://pageinfo?containerid=${pageId}`,
+  ];
 }
 
 function refreshMs(site) {
@@ -148,13 +156,17 @@ function captureScreenshot() {
   return cropScreenshot(SCREENSHOT_PATH);
 }
 
-function openPage(site) {
-  const scheme = pageScheme(site);
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function openPage(site, scheme) {
+  const targetScheme = scheme || pageScheme(site);
   if (process.env.WEIBO_SUPERLIKE_ANDROID_FORCE_STOP === "true") {
     adb(["shell", "am", "force-stop", "com.sina.weibo"]);
   }
-  adb(["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", scheme, "com.sina.weibo"]);
-  console.log(`Opened Weibo super topic: ${scheme}`);
+  adb(["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", targetScheme, "com.sina.weibo"]);
+  console.log(`Opened Weibo super topic: ${targetScheme}`);
 }
 
 function focusedWindow() {
@@ -175,8 +187,51 @@ async function ensurePage(site, forceOpen) {
   const focus = focusedWindow();
   if (forceOpen || !/com\.sina\.weibo/.test(focus) || !/SGPageActivity/.test(focus)) {
     openPage(site);
-    await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 30000)));
+    await wait(Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 30000));
+    if (dismissPermissionDialog()) await wait(1000);
+    if (dismissAnrDialog()) {
+      await wait(1000);
+      openPage(site);
+      await wait(Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 30000));
+      if (dismissPermissionDialog()) await wait(1000);
+    }
   }
+}
+
+function dismissPermissionDialog() {
+  const focus = focusedWindow();
+  if (!/permissioncontroller|GrantPermissionsActivity/i.test(focus)) return false;
+  const size = screenSize();
+  const x = Math.round(size.width * 0.5);
+  const y = Math.round(size.height * Number(process.env.WEIBO_SUPERLIKE_ANDROID_PERMISSION_DENY_Y_RATIO || 0.615));
+  adb(["shell", "input", "tap", String(x), String(y)]);
+  console.log("Dismissed Android permission dialog.");
+  return true;
+}
+
+function dismissAnrDialog() {
+  const focus = focusedWindow();
+  if (!/Application Not Responding|aerr_close/i.test(focus)) return false;
+  const size = screenSize();
+  const x = Math.round(size.width * 0.5);
+  const y = Math.round(size.height * Number(process.env.WEIBO_SUPERLIKE_ANDROID_ANR_CLOSE_Y_RATIO || 0.516));
+  adb(["shell", "input", "tap", String(x), String(y)]);
+  console.log("Closed unresponsive Weibo dialog.");
+  return true;
+}
+
+function lastOcrText() {
+  const textPath = path.join(DEBUG_DIR, "last-superlike-text.txt");
+  try {
+    return fs.readFileSync(textPath, "utf8");
+  } catch (err) {
+    return "";
+  }
+}
+
+function isGenericSuperGroupPage(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ");
+  return /Super Group/i.test(normalized) && !/曾沛慈|超\s*(?:LIKE|Like)|Posts/.test(normalized);
 }
 
 function swipeTagStrip(attempt) {
@@ -207,15 +262,34 @@ function runCollector(options, screenshotPath) {
 
 async function collectOnce(site, options) {
   await ensurePage(site, options.open);
+  const schemes = pageSchemes(site);
+  let schemeIndex = 0;
   const attempts = Math.max(1, Number(process.env.WEIBO_SUPERLIKE_ANDROID_ATTEMPTS || 12));
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (dismissPermissionDialog()) await wait(1000);
+    if (dismissAnrDialog()) {
+      await wait(1000);
+      openPage(site, schemes[schemeIndex]);
+      await wait(Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 30000));
+      if (dismissPermissionDialog()) await wait(1000);
+      continue;
+    }
     const screenshotPath = captureScreenshot();
     console.log(`[${new Date().toISOString()}] OCR attempt ${attempt}/${attempts}: ${path.relative(ROOT, screenshotPath)}`);
     if (runCollector(options, screenshotPath)) return true;
+    const text = lastOcrText();
+    if (schemes.length > 1 && isGenericSuperGroupPage(text)) {
+      schemeIndex = (schemeIndex + 1) % schemes.length;
+      console.log("Opened generic Super Group page. Reopening with fallback scheme...");
+      openPage(site, schemes[schemeIndex]);
+      await wait(Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 30000));
+      if (dismissPermissionDialog()) await wait(1000);
+      continue;
+    }
     if (attempt < attempts) {
       console.log("SuperLIKE tag was not readable. Nudging the banner tag strip and retrying...");
       swipeTagStrip(attempt);
-      await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_AFTER_SWIPE_WAIT_MS || 700)));
+      await wait(Number(process.env.WEIBO_SUPERLIKE_ANDROID_AFTER_SWIPE_WAIT_MS || 700));
     }
   }
   return false;
