@@ -392,7 +392,7 @@ let dashboardBilibiliState = null;
 let dashboardSelectedPeriodId = null;
 let dashboardHashAligned = false;
 let monitorRateChart = null;
-let monitorDataKind = "hot";
+let monitorDataKind = "weiboHeat";
 const monitorSelectedPeriodIds = {};
 const monitorSelectedRowKeys = {};
 let monitorHashAligned = false;
@@ -535,6 +535,7 @@ const MONITOR_DATASETS = {
     sourceUrlKey: "sourceUrl",
   },
 };
+const MONITOR_DATASET_ORDER = ["weiboHeat", "bilibili", "weiboSuperlike", "hot", "weibo", "stage"];
 
 function monitorDatasetConfig() {
   return MONITOR_DATASETS[monitorDataKind] || MONITOR_DATASETS.hot;
@@ -550,7 +551,8 @@ function monitorDatasetEnabled(c, dataset) {
   return true;
 }
 function enabledMonitorDatasets(c) {
-  return Object.keys(MONITOR_DATASETS)
+  return MONITOR_DATASET_ORDER
+    .filter(key => MONITOR_DATASETS[key])
     .map(key => MONITOR_DATASETS[key])
     .filter(dataset => monitorDatasetEnabled(c, dataset));
 }
@@ -2838,6 +2840,17 @@ async function renderMonitor(options) {
   const nameSelector = selectableRows
     ? renderMonitorNameSelector(metrics, selectedKeys, selectionContext)
     : "";
+  const dataPointNotice = !buckets.length
+    ? `<div class="mt-4 rounded-xl border border-yellow-100 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+        当前时间窗内还没有可计算的增量点。${periodHistory.length < 2
+          ? `至少需要同一个${dataset.valueLabel}两次有效采样，下一轮采样后会自动出现走势。`
+          : "可以扩大时间范围，或等待下一轮有效采样。"}
+      </div>`
+    : summary.total <= 0
+      ? `<div class="mt-4 rounded-xl border border-brand-100 bg-white px-4 py-3 text-sm text-gray-500">
+          当前时间窗内没有正向新增；图表会保持在 0，等下一次有效增长后会出现新的数据点。
+        </div>`
+      : "";
 
   $("monitor").innerHTML = `
     <div class="bg-gradient-to-b from-brand-100/40 to-white/70">
@@ -2869,6 +2882,7 @@ async function renderMonitor(options) {
             <div class="relative w-full min-w-0" style="height:420px;">
               <canvas id="monitorRateChart"></canvas>
             </div>
+            ${dataPointNotice}
           </div>
           ${nameSelector}
         </div>
