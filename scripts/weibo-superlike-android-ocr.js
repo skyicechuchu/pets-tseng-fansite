@@ -182,6 +182,8 @@ async function ensurePage(site, forceOpen) {
 function swipeTagStrip(attempt) {
   const size = screenSize();
   const y = Number(process.env.WEIBO_SUPERLIKE_ANDROID_TAG_Y || Math.round(size.height * DEFAULT_TAG_Y_RATIO) || DEFAULT_TAG_Y);
+  // The SuperLIKE chip sits in a sensitive horizontal tag strip. Small nudges
+  // reveal the full "超LIKE14018人" text without opening the profile details page.
   const fromX = Math.round(size.width * Number(process.env.WEIBO_SUPERLIKE_ANDROID_SWIPE_FROM_X_RATIO || 0.76));
   const toX = Math.round(size.width * Number(process.env.WEIBO_SUPERLIKE_ANDROID_SWIPE_TO_X_RATIO || 0.60));
   const duration = Math.round(Number(process.env.WEIBO_SUPERLIKE_ANDROID_SWIPE_MS || 180));
