@@ -1344,7 +1344,7 @@ function renderWeiboSuperlikeDashboardSection(c, superState) {
     ? `<a href="${esc(cfg.sourceUrl)}" target="_blank" rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">曾沛慈超话 ${ICON.external}</a>`
     : "";
-  const labelText = row.labelText || `超LIKE${Math.round(Number(row.interactionValue || 0))}人`;
+  const countText = String(Math.round(Number(row.superLikeCount || row.interactionValue || 0)));
 
   return `
     <section class="mb-10">
@@ -1356,8 +1356,8 @@ function renderWeiboSuperlikeDashboardSection(c, superState) {
         <div class="flex flex-wrap items-center gap-3 text-sm">${sourceLink}</div>
       </div>
       <div class="rounded-xl border border-brand-100 bg-white p-6 shadow-sm">
-        <p class="text-sm text-gray-500">顶部 tag</p>
-        <p class="mt-1 font-display text-4xl text-brand-600">${esc(labelText)}</p>
+        <p class="text-sm text-gray-500">超LIKE人数</p>
+        <p class="mt-1 font-display text-4xl text-brand-600">${esc(countText)}</p>
       </div>
     </section>`;
 }
