@@ -361,6 +361,64 @@ function monitorSnapshotFromRow(row, pick, periodId) {
   }
 }
 
+function superLikeLabel(value) {
+  return `超LIKE${Math.round(Number(value || 0))}人`;
+}
+
+function sanitizeWeiboSuperlikeState(state) {
+  if (!state) return null;
+  const periods = (state.periods || []).map(period => Object.assign({}, period, {
+    rows: (period.rows || []).map(row => {
+      const count = Number(row.interactionValue || row.superLikeCount || 0);
+      return {
+        rank: Number(row.rank || 1),
+        title: row.title || "超LIKE人数",
+        guest: row.guest || state.topicName || "曾沛慈",
+        interactionValue: count,
+        roundAmount: 0,
+        onScreenCount: 0,
+        cid: row.cid || state.topicId || "",
+        coverId: row.coverId || state.tagId || "superlike",
+        coverUrl: "",
+        isTarget: true,
+        key: row.key || `${period.periodId}:superlike`,
+        periodId: Number(row.periodId || period.periodId),
+        periodLabel: row.periodLabel || period.periodLabel,
+        superLikeCount: count,
+        labelText: superLikeLabel(count),
+      };
+    }),
+  }));
+  return Object.assign({}, state, {
+    labelText: periods[0] && periods[0].rows[0] ? periods[0].rows[0].labelText : state.labelText,
+    superLikeCount: periods[0] && periods[0].rows[0] ? periods[0].rows[0].interactionValue : state.superLikeCount,
+    periods,
+  });
+}
+
+function sanitizeWeiboSuperlikeSnapshot(snapshot) {
+  if (!snapshot) return null;
+  return Object.assign({}, snapshot, {
+    rows: (snapshot.rows || []).map(row => {
+      const count = Number(row.interactionValue || row.superLikeCount || 0);
+      return {
+        key: row.key,
+        periodId: Number(row.periodId || 0),
+        periodLabel: row.periodLabel,
+        title: row.title || "超LIKE人数",
+        guest: row.guest || "曾沛慈",
+        rank: Number(row.rank || 1),
+        interactionValue: count,
+        roundAmount: 0,
+        onScreenCount: 0,
+        isTarget: true,
+        superLikeCount: count,
+        labelText: superLikeLabel(count),
+      };
+    }),
+  });
+}
+
 function minuteBucket(date = new Date()) {
   const d = new Date(date);
   d.setUTCSeconds(0, 0);
@@ -962,10 +1020,11 @@ async function weiboHistory(env, limit, periodId, range) {
 
 async function weiboSuperlikeLatest(env) {
   const row = await latestRowWithState(env, weiboSuperlikeState, WEIBO_SUPERLIKE_STATE_MARKER);
+  const state = sanitizeWeiboSuperlikeState(weiboSuperlikeState(parseStoredState(row.raw_json)));
   return {
     ok: true,
     source: "worker",
-    state: weiboSuperlikeState(parseStoredState(row.raw_json)),
+    state,
     meta: {
       latestSnapshotId: row.id,
       capturedAt: row.captured_at,
@@ -980,6 +1039,7 @@ async function weiboSuperlikeHistory(env, limit, periodId, range) {
   const snapshots = rows
     .reverse()
     .map(row => monitorSnapshotFromRow(row, weiboSuperlikeState, periodId))
+    .map(sanitizeWeiboSuperlikeSnapshot)
     .filter(Boolean);
   return {
     ok: true,
@@ -1207,11 +1267,7 @@ function normalizeWeiboSuperlikeState(payload, env) {
   );
   if (!count) throw httpError("missing_superlike_count", 400);
 
-  const signInCount = parseMetricNumber(raw.signInCount || raw.checkinCount || raw.todayCheckin || 0);
-  const fansCount = parseMetricNumber(raw.fansCount || raw.followersCount || raw.followCount || 0);
-  const postsCount = parseMetricNumber(raw.postsCount || raw.postCount || 0);
-  const tagPostCount = parseMetricNumber(raw.tagPostCount || raw.superLikePostCount || 0);
-  const labelText = raw.labelText || raw.rawLabel || `超LIKE ${count}人`;
+  const labelText = `超LIKE${count}人`;
 
   return {
     updatedAt,
@@ -1222,10 +1278,6 @@ function normalizeWeiboSuperlikeState(payload, env) {
     topicId: raw.topicId || "",
     tagId: raw.tagId || "",
     labelText,
-    signInCount,
-    fansCount,
-    postsCount,
-    tagPostCount,
     periods: [{
       periodId: Number(raw.currentPeriodId || raw.periodId || WEIBO_SUPERLIKE_PERIOD_ID),
       periodLabel: raw.periodLabel || WEIBO_SUPERLIKE_PERIOD_LABEL,
@@ -1235,8 +1287,8 @@ function normalizeWeiboSuperlikeState(payload, env) {
         title: raw.rowTitle || "超LIKE人数",
         guest: topicName,
         interactionValue: count,
-        roundAmount: signInCount,
-        onScreenCount: fansCount,
+        roundAmount: 0,
+        onScreenCount: 0,
         cid: raw.topicId || "",
         coverId: raw.tagId || "superlike",
         coverUrl: raw.coverUrl || "",
@@ -1245,10 +1297,6 @@ function normalizeWeiboSuperlikeState(payload, env) {
         periodId: Number(raw.currentPeriodId || raw.periodId || WEIBO_SUPERLIKE_PERIOD_ID),
         periodLabel: raw.periodLabel || WEIBO_SUPERLIKE_PERIOD_LABEL,
         superLikeCount: count,
-        signInCount,
-        fansCount,
-        postsCount,
-        tagPostCount,
         labelText,
       }],
     }],
@@ -1318,8 +1366,6 @@ async function ingestWeiboSuperlike(request, env) {
     snapshotId: row && row.id,
     currentPeriodId: state.currentPeriodId,
     superLikeCount: state.periods[0].rows[0].interactionValue,
-    signInCount: state.signInCount,
-    fansCount: state.fansCount,
   };
 }
 

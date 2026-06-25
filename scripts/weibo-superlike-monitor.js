@@ -15,8 +15,8 @@ const PERIOD_LABEL = "曾沛慈超话";
 const DEFAULT_PAGE_ID = "1008081a9bfa740ec7181f9ce077ab08e96746";
 const DEFAULT_TOPIC_ID = `1022:${DEFAULT_PAGE_ID}`;
 const DEFAULT_TAG_ID = "5294454512156724";
-const DEFAULT_REFRESH_MS = 30 * 60 * 1000;
-const MAX_SNAPSHOTS = 30 * 24 * 2;
+const DEFAULT_REFRESH_MS = 5 * 60 * 1000;
+const MAX_SNAPSHOTS = 30 * 24 * 12;
 
 function loadEnvFile(file) {
   if (!fs.existsSync(file)) return;
@@ -109,24 +109,8 @@ function extractSuperLikeCount(text) {
   ], text);
 }
 
-function extractTopicMetrics(text) {
-  const signIn = findNumber([/今日签到\s*([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*人/i], text);
-  const fans = findNumber([
-    /([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*人关注/i,
-    /([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*(?:宠物迷|粉丝)/i,
-  ], text);
-  const posts = findNumber([
-    /([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*帖子/i,
-    /帖子\s*([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)/i,
-  ], text);
-  return {
-    signInCount: signIn.value,
-    fansCount: fans.value,
-    postsCount: posts.value,
-    signInText: signIn.text,
-    fansText: fans.text,
-    postsText: posts.text,
-  };
+function superLikeLabel(value) {
+  return `超LIKE${Math.round(Number(value || 0))}人`;
 }
 
 function stateToSnapshot(state) {
@@ -145,14 +129,8 @@ function stateToSnapshot(state) {
       guest: row.guest,
       rank: row.rank,
       interactionValue: row.interactionValue,
-      roundAmount: row.roundAmount,
-      onScreenCount: row.onScreenCount,
       isTarget: row.isTarget,
       superLikeCount: row.superLikeCount,
-      signInCount: row.signInCount,
-      fansCount: row.fansCount,
-      postsCount: row.postsCount,
-      tagPostCount: row.tagPostCount,
       labelText: row.labelText,
     }],
   };
@@ -227,7 +205,7 @@ async function collectBrowserText(config, options) {
     if (!/json|text|html/.test(contentType)) return;
     try {
       const body = await response.text();
-      if (/超\s*(?:LIKE|Like|like)|今日签到|宠物迷|人关注|帖子/.test(body)) {
+      if (/超\s*(?:LIKE|Like|like)/.test(body)) {
         responseTexts.push(body);
       }
     } catch (err) {
@@ -258,7 +236,7 @@ async function collectState(site, options) {
 
   let pageUrl = cfg.sourceUrl || `https://weibo.com/p/${pageId}`;
   let combined = "";
-  let countInfo = { value: manualCount, text: manualCount ? `超LIKE ${manualCount}人` : "" };
+  let countInfo = { value: manualCount, text: manualCount ? superLikeLabel(manualCount) : "" };
   if (!manualCount) {
     const collected = await collectBrowserText(Object.assign({}, cfg, { pageId }), options);
     pageUrl = collected.pageUrl || pageUrl;
@@ -273,11 +251,11 @@ async function collectState(site, options) {
     await fs.promises.mkdir(DEBUG_DIR, { recursive: true });
     const debugPath = path.join(DEBUG_DIR, "last-superlike-text.txt");
     await fs.promises.writeFile(debugPath, combined.slice(0, 200000));
-    throw new Error(`未找到形如“超LIKE 13097人”的人数文本。已保存调试文本：${path.relative(ROOT, debugPath)}`);
+    throw new Error(`未找到形如“超LIKE13097人”的人数文本。已保存调试文本：${path.relative(ROOT, debugPath)}`);
   }
 
-  const metrics = extractTopicMetrics(combined);
   const updatedAt = minuteBucket();
+  const labelText = superLikeLabel(countInfo.value);
   const state = {
     updatedAt,
     currentPeriodId: PERIOD_ID,
@@ -287,11 +265,8 @@ async function collectState(site, options) {
     topicId,
     tagId,
     topicName: cfg.targetName || "曾沛慈",
-    labelText: countInfo.text,
+    labelText,
     superLikeCount: countInfo.value,
-    signInCount: metrics.signInCount,
-    fansCount: metrics.fansCount,
-    postsCount: metrics.postsCount,
     periods: [{
       periodId: PERIOD_ID,
       periodLabel: PERIOD_LABEL,
@@ -301,8 +276,8 @@ async function collectState(site, options) {
         title: "超LIKE人数",
         guest: cfg.targetName || "曾沛慈",
         interactionValue: countInfo.value,
-        roundAmount: metrics.signInCount,
-        onScreenCount: metrics.fansCount,
+        roundAmount: 0,
+        onScreenCount: 0,
         cid: topicId,
         coverId: tagId,
         coverUrl: "",
@@ -311,11 +286,7 @@ async function collectState(site, options) {
         periodId: PERIOD_ID,
         periodLabel: PERIOD_LABEL,
         superLikeCount: countInfo.value,
-        signInCount: metrics.signInCount,
-        fansCount: metrics.fansCount,
-        postsCount: metrics.postsCount,
-        tagPostCount: 0,
-        labelText: countInfo.text,
+        labelText,
       }],
     }],
   };
@@ -328,8 +299,6 @@ function printSummary(state, localCount, uploadResult) {
     ok: true,
     updatedAt: state.updatedAt,
     superLikeCount: row.interactionValue,
-    signInCount: row.roundAmount,
-    fansCount: row.onScreenCount,
     labelText: row.labelText,
     localSnapshots: localCount,
     upload: uploadResult && uploadResult.result || null,

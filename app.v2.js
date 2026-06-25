@@ -1344,28 +1344,21 @@ function renderWeiboSuperlikeDashboardSection(c, superState) {
     ? `<a href="${esc(cfg.sourceUrl)}" target="_blank" rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">曾沛慈超话 ${ICON.external}</a>`
     : "";
-  const stats = [
-    { label: "超LIKE人数", value: fmtInt(row.interactionValue), note: row.labelText || "顶部 tag 人数" },
-    { label: "今日签到", value: row.roundAmount ? `${fmtInt(row.roundAmount)} 人` : "--", note: "微博超话公开头部数据" },
-    { label: "超话粉丝", value: row.onScreenCount ? fmtCompact(row.onScreenCount) : "--", note: cfg.targetName || row.guest || "曾沛慈" },
-    { label: "采样频率", value: `${refreshMinutes} 分钟`, note: `最近 ${updated}` },
-  ].map(item => `
-    <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
-      <p class="text-sm text-gray-500">${esc(item.label)}</p>
-      <p class="mt-1 font-display text-3xl text-brand-600">${esc(item.value)}</p>
-      <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
-    </div>`).join("");
+  const labelText = row.labelText || `超LIKE${Math.round(Number(row.interactionValue || 0))}人`;
 
   return `
     <section class="mb-10">
       <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h3 class="font-display text-2xl text-brand-600">微博超LIKE人数</h3>
-          <p class="mt-1 text-sm text-gray-500">最近采样 ${esc(updated)} 北京时间 · 低频追踪超话活跃人数</p>
+          <p class="mt-1 text-sm text-gray-500">最近采样 ${esc(updated)} 北京时间 · 每 ${refreshMinutes} 分钟采样</p>
         </div>
         <div class="flex flex-wrap items-center gap-3 text-sm">${sourceLink}</div>
       </div>
-      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
+      <div class="rounded-xl border border-brand-100 bg-white p-6 shadow-sm">
+        <p class="text-sm text-gray-500">顶部 tag</p>
+        <p class="mt-1 font-display text-4xl text-brand-600">${esc(labelText)}</p>
+      </div>
     </section>`;
 }
 function renderBilibiliDashboardSection(c, biliState) {
