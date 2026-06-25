@@ -27,9 +27,12 @@
     "weibo:superlike:android:open": "node scripts/weibo-superlike-android-ocr.js open",
     "weibo:superlike:android:collect": "node scripts/weibo-superlike-android-ocr.js collect",
     "weibo:superlike:android:watch": "node scripts/weibo-superlike-android-ocr.js watch",
+    "weibo:heat:android:open": "node scripts/weibo-heat-android-monitor.js open",
+    "weibo:heat:android:collect": "node scripts/weibo-heat-android-monitor.js collect",
+    "weibo:heat:android:watch": "node scripts/weibo-heat-android-monitor.js watch",
     "bilibili:collect": "node scripts/bilibili-monitor.js collect",
     "bilibili:watch": "node scripts/bilibili-monitor.js watch",
-    "check": "node --check app.v2.js && node --check data.v2.js && node --check workers/mgtv-monitor/index.js && node --check scripts/weibo-stage-monitor.js && node --check scripts/weibo-superlike-monitor.js && node --check scripts/weibo-superlike-android-ocr.js && node --check scripts/analyze-weibo-har.js && node --check scripts/weibo-ios-monitor.js && node --check scripts/weibo-android-monitor.js && node --check scripts/weibo-android-emulator.js && node --check scripts/bilibili-monitor.js"
+    "check": "node --check app.v2.js && node --check data.v2.js && node --check workers/mgtv-monitor/index.js && node --check scripts/weibo-stage-monitor.js && node --check scripts/weibo-superlike-monitor.js && node --check scripts/weibo-superlike-android-ocr.js && node --check scripts/weibo-heat-android-monitor.js && node --check scripts/analyze-weibo-har.js && node --check scripts/weibo-ios-monitor.js && node --check scripts/weibo-android-monitor.js && node --check scripts/weibo-android-emulator.js && node --check scripts/bilibili-monitor.js"
   },
   "keywords": [],
   "author": "",

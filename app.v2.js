@@ -380,11 +380,13 @@ let dashboardRankChart = null;
 let dashboardStageChart = null;
 let dashboardHotVoteChart = null;
 let dashboardWeiboStageChart = null;
+let dashboardWeiboHeatChart = null;
 let dashboardBilibiliPerformerChart = null;
 let dashboardRefreshTimer = null;
 let dashboardState = null;
 let dashboardHotState = null;
 let dashboardWeiboStageState = null;
+let dashboardWeiboHeatState = null;
 let dashboardWeiboSuperlikeState = null;
 let dashboardBilibiliState = null;
 let dashboardSelectedPeriodId = null;
@@ -491,6 +493,22 @@ const MONITOR_DATASETS = {
     sourceLabel: "曾沛慈超话",
     sourceUrlKey: "sourceUrl",
   },
+  weiboHeat: {
+    key: "weiboHeat",
+    label: "微博姐姐热度",
+    title: "微博姐姐热度增量走势",
+    emptyName: "微博姐姐热度",
+    historyPath: "/weibo-heat/history",
+    latestPath: "/weibo-heat/latest",
+    sourceConfigKey: "weiboHeat",
+    valueLabel: "姐姐",
+    yAxisLabel: "新增热度值（万）",
+    sourceLabel: "微博姐姐热度页",
+    sourceUrlKey: "sourceUrl",
+    displayScale: 10000,
+    displayUnit: "万",
+    highlightTitles: ["曾沛慈"],
+  },
   bilibili: {
     key: "bilibili",
     label: "B站播放",
@@ -527,6 +545,7 @@ function monitorDatasetEnabled(c, dataset) {
   if (dataset.key === "stage") return Boolean(c && c.mgtv && c.mgtv.stageCollectionEnabled === true);
   if (dataset.key === "weibo") return Boolean(c && c.weiboStage && c.weiboStage.collectionEnabled === true);
   if (dataset.key === "weiboSuperlike") return Boolean(c && c.weiboSuperlike && c.weiboSuperlike.collectionEnabled === true);
+  if (dataset.key === "weiboHeat") return Boolean(c && c.weiboHeat && c.weiboHeat.collectionEnabled === true);
   if (dataset.key === "bilibili") return Boolean(c && c.bilibili && c.bilibili.collectionEnabled === true);
   return true;
 }
@@ -575,6 +594,7 @@ function monitorHistorySourceLabel() {
 function collectionSwitches(c) {
   const mgtv = c && c.mgtv || {};
   const weibo = c && c.weiboStage || {};
+  const weiboHeat = c && c.weiboHeat || {};
   const weiboSuperlike = c && c.weiboSuperlike || {};
   return [
     {
@@ -597,6 +617,13 @@ function collectionSwitches(c) {
       enabled: weibo.collectionEnabled === true,
       visible: weibo.collectionEnabled === true,
       note: "本地脚本",
+    },
+    {
+      key: "weiboHeat",
+      label: "微博姐姐热度",
+      enabled: weiboHeat.collectionEnabled === true,
+      visible: weiboHeat.collectionEnabled === true,
+      note: `Top ${Number(weiboHeat.topN || 10)} · 每 ${Math.max(1, Math.round(Number(weiboHeat.refreshMs || 300000) / 60000))} 分钟`,
     },
     {
       key: "weiboSuperlike",
@@ -944,6 +971,10 @@ async function loadWorkerWeiboSuperlikeDashboardData(campaign) {
   const json = await fetchWorkerJson("/weibo-superlike/latest", {}, campaign.mgtv);
   return hydrateMgtvState(json.state || {}, "worker", json.meta);
 }
+async function loadWorkerWeiboHeatDashboardData(campaign) {
+  const json = await fetchWorkerJson("/weibo-heat/latest", {}, campaign.mgtv);
+  return hydrateMgtvState(json.state || {}, "worker", json.meta);
+}
 function hydrateBilibiliState(raw, source, meta) {
   const periods = (raw.periods || []).map(period => Object.assign({}, period, {
     periodId: Number(period.periodId),
@@ -1026,6 +1057,16 @@ async function loadWeiboSuperlikeDashboardData(campaign) {
     return await loadWorkerWeiboSuperlikeDashboardData(campaign);
   } catch (err) {
     console.warn("微博超LIKE人数暂时不可用", err);
+    return null;
+  }
+}
+async function loadWeiboHeatDashboardData(campaign) {
+  if (!campaign || !campaign.weiboHeat || campaign.weiboHeat.collectionEnabled !== true) return null;
+  if (!workerApiBase(campaign.mgtv)) return null;
+  try {
+    return await loadWorkerWeiboHeatDashboardData(campaign);
+  } catch (err) {
+    console.warn("微博姐姐热度暂时不可用", err);
     return null;
   }
 }
@@ -1361,6 +1402,77 @@ function renderWeiboSuperlikeDashboardSection(c, superState) {
       </div>
     </section>`;
 }
+function renderWeiboHeatDashboardSection(c, heatState) {
+  const cfg = c.weiboHeat || {};
+  const period = heatState && heatState.periods && heatState.periods[0];
+  const rows = (period && period.rows || [])
+    .slice()
+    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
+    .slice(0, Number(cfg.topN || 10));
+  if (!rows.length) return "";
+  const updated = formatBeijingClock(heatState.updatedAt);
+  const sourceLink = cfg.sourceUrl
+    ? `<a href="${esc(cfg.sourceUrl)}" target="_blank" rel="noopener noreferrer"
+          class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">微博姐姐热度页 ${ICON.external}</a>`
+    : "";
+  const target = rows.find(row => row.isTarget) || {};
+  const top = rows[0] || {};
+  const total = sumRows(rows, "interactionValue");
+  const stats = [
+    { label: "当前第一", value: top.title || "--", note: top.interactionValue ? `${fmtWan(top.interactionValue)} · #${top.rank || 1}` : "暂无数据", highlight: top.isTarget },
+    { label: "沛慈排名", value: target.rank ? `#${target.rank}` : "--", note: target.interactionValue ? fmtWan(target.interactionValue) : "暂未进入 Top 10", highlight: true },
+    { label: "沛慈热度", value: target.interactionValue ? fmtWan(target.interactionValue) : "--", note: "姐姐热度值", highlight: true },
+    { label: "Top10 合计", value: fmtWan(total), note: `${rows.length} 位姐姐`, highlight: false },
+  ].map(item => `
+    <div class="rounded-xl border ${item.highlight ? "border-red-100 bg-red-50/60" : "border-brand-100 bg-white"} p-5 shadow-sm">
+      <p class="text-sm ${item.highlight ? "text-red-500" : "text-gray-500"}">${esc(item.label)}</p>
+      <p class="mt-1 font-display text-2xl ${item.highlight ? "text-red-600" : "text-brand-600"}">${esc(item.value)}</p>
+      <p class="mt-1 truncate text-xs text-gray-500">${esc(item.note)}</p>
+    </div>`).join("");
+  const tableRows = rows.map(row => `
+    <tr class="${row.isTarget ? "bg-red-50/80 text-red-800" : ""}">
+      <td class="whitespace-nowrap px-3 py-2 font-bold">#${row.rank}</td>
+      <td class="px-3 py-2 font-medium">${esc(row.title)}</td>
+      <td class="px-3 py-2 text-right">${fmtWan(row.interactionValue)}</td>
+    </tr>`).join("");
+
+  return `
+    <section class="mb-10">
+      <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 class="font-display text-2xl text-brand-600">微博姐姐热度 Top 10</h3>
+          <p class="mt-1 text-sm text-gray-500">最近采样 ${esc(updated)} 北京时间 · 每 ${Math.max(1, Math.round(Number(cfg.refreshMs || 300000) / 60000))} 分钟采样</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">${sourceLink}</div>
+      </div>
+      <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">${stats}</div>
+      <div class="grid gap-6 lg:grid-cols-[1.2fr_0.9fr]">
+        <div class="min-w-0 rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
+          <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h4 class="font-medium text-gray-800">当前热度值</h4>
+            <p class="text-xs text-gray-400">红色为${esc(cfg.targetName || "曾沛慈")}</p>
+          </div>
+          <div class="relative w-full min-w-0" style="height:${Math.max(300, rows.length * 34)}px;">
+            <canvas id="weiboHeatChart"></canvas>
+          </div>
+        </div>
+        <div class="min-w-0 overflow-hidden rounded-xl border border-brand-100 bg-white shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-brand-50 text-xs text-brand-700">
+                <tr>
+                  <th class="px-3 py-2 text-left">排名</th>
+                  <th class="px-3 py-2 text-left">姐姐</th>
+                  <th class="px-3 py-2 text-right">热度值</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-brand-50">${tableRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
 function renderBilibiliDashboardSection(c, biliState) {
   const cfg = c.bilibili || {};
   const period = biliState && biliState.periods && biliState.periods[0];
@@ -1472,7 +1584,7 @@ function renderBilibiliDashboardSection(c, biliState) {
       </div>
     </section>`;
 }
-function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, weiboState, weiboSuperlikeState, biliState) {
+function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, weiboState, weiboHeatState, weiboSuperlikeState, biliState) {
   const mgtv = c.mgtv;
   const periods = state.periods || [];
   const selected = mgtv.stageCollectionEnabled === true
@@ -1501,6 +1613,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
   const collectionStatus = renderCollectionStatus(c);
   const hotVoteSection = renderHotVoteDashboardSection(c, hotState);
   const weiboStageSection = renderWeiboStageDashboardSection(c, weiboState);
+  const weiboHeatSection = renderWeiboHeatDashboardSection(c, weiboHeatState);
   const weiboSuperlikeSection = renderWeiboSuperlikeDashboardSection(c, weiboSuperlikeState);
   const bilibiliSection = renderBilibiliDashboardSection(c, biliState);
 
@@ -1626,6 +1739,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
         ${collectionStatus}
 
         ${bilibiliSection}
+        ${weiboHeatSection}
         ${weiboSuperlikeSection}
         ${hotVoteSection}
         ${weiboStageSection}
@@ -1634,7 +1748,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
     </div>`;
 
   attachMgtvDashboardHandlers(c, state);
-  drawMgtvCharts(c, state, selected, hotState, weiboState, biliState);
+  drawMgtvCharts(c, state, selected, hotState, weiboState, weiboHeatState, biliState);
   alignDashboardHash();
 }
 function alignDashboardHash() {
@@ -1647,13 +1761,14 @@ function alignDashboardHash() {
 }
 function attachMgtvDashboardHandlers(c, state) {
   document.querySelectorAll("[data-period-id]").forEach(btn => {
-    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState, dashboardWeiboStageState, dashboardWeiboSuperlikeState, dashboardBilibiliState));
+    btn.addEventListener("click", () => renderMgtvDashboard(c, state, Number(btn.dataset.periodId), null, dashboardHotState, dashboardWeiboStageState, dashboardWeiboHeatState, dashboardWeiboSuperlikeState, dashboardBilibiliState));
   });
   const refresh = document.querySelector("[data-mgtv-refresh]");
   if (refresh) refresh.addEventListener("click", () => loadAndRenderMgtvDashboard(c, dashboardSelectedPeriodId));
 }
-function drawMgtvCharts(c, state, selected, hotState, weiboState, biliState) {
+function drawMgtvCharts(c, state, selected, hotState, weiboState, weiboHeatState, biliState) {
   if (dashboardBilibiliPerformerChart) dashboardBilibiliPerformerChart.destroy();
+  if (dashboardWeiboHeatChart) dashboardWeiboHeatChart.destroy();
   if (dashboardWeiboStageChart) dashboardWeiboStageChart.destroy();
   if (dashboardHotVoteChart) dashboardHotVoteChart.destroy();
   if (dashboardRankChart) dashboardRankChart.destroy();
@@ -1667,6 +1782,37 @@ function drawMgtvCharts(c, state, selected, hotState, weiboState, biliState) {
     plugins: { legend: { display: false } },
   };
   const hotPeriod = hotState && hotState.periods && hotState.periods[0];
+  const heatCanvas = $("weiboHeatChart");
+  const heatPeriod = weiboHeatState && weiboHeatState.periods && weiboHeatState.periods[0];
+  const heatRows = (heatPeriod && heatPeriod.rows || [])
+    .slice()
+    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
+    .slice(0, Number(c.weiboHeat && c.weiboHeat.topN || 10));
+  if (heatCanvas && heatRows.length) {
+    dashboardWeiboHeatChart = new Chart(heatCanvas, {
+      type: "bar",
+      data: {
+        labels: heatRows.map(row => row.title),
+        datasets: [{
+          data: heatRows.map(row => Number(row.interactionValue || 0) / 10000),
+          backgroundColor: heatRows.map(row => row.isTarget ? "#dc2626" : "#fecaca"),
+          borderRadius: 6,
+        }],
+      },
+      options: Object.assign({}, baseOpts, {
+        indexAxis: "y",
+        scales: {
+          x: {
+            beginAtZero: true,
+            grid: { color: "#fde8e8" },
+            title: { display: true, text: "热度值（万）" },
+            ticks: { callback: value => `${Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 1 })}万` },
+          },
+          y: { grid: { display: false } },
+        },
+      }),
+    });
+  }
   const bilibiliCanvas = $("bilibiliPerformerChart");
   const bilibiliPeriod = biliState && biliState.periods && biliState.periods[0];
   const bilibiliRows = (bilibiliPeriod && bilibiliPeriod.rows || [])
@@ -1840,25 +1986,27 @@ function scheduleMgtvRefresh(c) {
 async function loadAndRenderMgtvDashboard(c, preferredPeriodId, silent) {
   if (!silent) renderDashboardLoading(c);
   try {
-    const [state, hotState, weiboStageState, weiboSuperlikeState, bilibiliState] = await Promise.all([
+    const [state, hotState, weiboStageState, weiboHeatState, weiboSuperlikeState, bilibiliState] = await Promise.all([
       loadMgtvDashboardData(c),
       loadHotVoteDashboardData(c),
       loadWeiboStageDashboardData(c),
+      loadWeiboHeatDashboardData(c),
       loadWeiboSuperlikeDashboardData(c),
       loadBilibiliDashboardData(c),
     ]);
     dashboardState = state;
     dashboardHotState = hotState || dashboardHotState;
     dashboardWeiboStageState = weiboStageState || dashboardWeiboStageState;
+    dashboardWeiboHeatState = weiboHeatState || dashboardWeiboHeatState;
     dashboardWeiboSuperlikeState = weiboSuperlikeState || dashboardWeiboSuperlikeState;
     dashboardBilibiliState = bilibiliState || dashboardBilibiliState;
     recordMgtvMonitorSnapshot(state);
     const selected = preferredPeriodId || state.currentPeriodId || (state.periods[0] && state.periods[0].periodId);
-    renderMgtvDashboard(c, state, selected, null, dashboardHotState, dashboardWeiboStageState, dashboardWeiboSuperlikeState, dashboardBilibiliState);
+    renderMgtvDashboard(c, state, selected, null, dashboardHotState, dashboardWeiboStageState, dashboardWeiboHeatState, dashboardWeiboSuperlikeState, dashboardBilibiliState);
     scheduleMgtvRefresh(c);
   } catch (err) {
     if (dashboardState && silent) {
-      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState, dashboardWeiboStageState, dashboardWeiboSuperlikeState, dashboardBilibiliState);
+      renderMgtvDashboard(c, dashboardState, dashboardSelectedPeriodId, err, dashboardHotState, dashboardWeiboStageState, dashboardWeiboHeatState, dashboardWeiboSuperlikeState, dashboardBilibiliState);
     } else {
       renderDashboardError(c, err);
     }
@@ -2618,7 +2766,7 @@ async function renderMonitor(options) {
   const windowInfo = resolveMonitorWindow(periodHistory);
   const buckets = aggregateMonitorBuckets(intervals, metrics, windowInfo);
   const selectionContext = monitorSelectionContext(dataset.key, selected.periodId);
-  const selectableRows = dataset.key === "hot" || dataset.key === "weibo" || dataset.key === "bilibili";
+  const selectableRows = dataset.key === "hot" || dataset.key === "weibo" || dataset.key === "weiboHeat" || dataset.key === "bilibili";
   const selectedKeys = selectableRows
     ? monitorSelectionKeys(selectionContext, metrics)
     : null;

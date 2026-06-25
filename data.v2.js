@@ -161,6 +161,14 @@ const SITE = {
       sourceUrl: "https://m.weibo.cn/c/wbox?id=l331zrkexk&cid=1334",
       refreshMs: 300000,
     },
+    weiboHeat: {
+      targetName: "曾沛慈",
+      collectionEnabled: true,
+      sourceUrl: "https://wbox.h5.weibo.cn/l331zrkexk?cid=1336&id=l331zrkexk&luicode=40000385&source=wbox&s_trans=p4ApnESHund8QXkwIKw0Rw%3D%3D__s&s_channel=4",
+      refreshMs: 300000,
+      historyUrl: "data/weibo-heat-history.json",
+      topN: 10,
+    },
     weiboSuperlike: {
       targetName: "曾沛慈",
       collectionEnabled: true,
