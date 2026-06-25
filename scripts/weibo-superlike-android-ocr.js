@@ -8,10 +8,13 @@ const ROOT = path.resolve(__dirname, "..");
 const DATA_FILE = path.join(ROOT, "data.v2.js");
 const DEBUG_DIR = process.env.WEIBO_SUPERLIKE_DEBUG_DIR || path.join(ROOT, "tmp/weibo-superlike");
 const SCREENSHOT_PATH = process.env.WEIBO_SUPERLIKE_ANDROID_SCREENSHOT_PATH || path.join(DEBUG_DIR, "android-superlike.png");
+const CROP_PATH = process.env.WEIBO_SUPERLIKE_ANDROID_CROP_PATH || path.join(DEBUG_DIR, "android-superlike-crop.png");
 const ADB_SERIAL = process.env.ADB_SERIAL || "emulator-5554";
 const DEFAULT_PAGE_ID = "1008081a9bfa740ec7181f9ce077ab08e96746";
 const DEFAULT_REFRESH_MS = 5 * 60 * 1000;
 const DEFAULT_TAG_Y = 420;
+const DEFAULT_TAG_Y_RATIO = 0.175;
+const DEFAULT_CROP = "0.04,0.045,0.92,0.22";
 
 function loadEnvFile(file) {
   if (!fs.existsSync(file)) return;
@@ -42,6 +45,10 @@ function run(command, args, options) {
   return result.stdout || "";
 }
 
+function commandExists(command) {
+  return spawnSync("bash", ["-lc", `command -v ${command}`], { encoding: "utf8" }).status === 0;
+}
+
 function runBuffer(command, args) {
   const result = spawnSync(command, args, { encoding: "buffer", maxBuffer: 30 * 1024 * 1024 });
   if (result.status !== 0) {
@@ -57,6 +64,58 @@ function adb(args, options) {
 
 function adbBuffer(args) {
   return runBuffer("adb", ["-s", ADB_SERIAL].concat(args));
+}
+
+function screenSize() {
+  try {
+    const output = adb(["shell", "wm", "size"]);
+    const override = output.match(/Override size:\s*(\d+)x(\d+)/);
+    const physical = output.match(/Physical size:\s*(\d+)x(\d+)/);
+    const match = override || physical;
+    if (match) return { width: Number(match[1]), height: Number(match[2]) };
+  } catch (err) {
+    // Fall back to full-size emulator defaults below.
+  }
+  return { width: 1080, height: 2400 };
+}
+
+function imageSize(imagePath) {
+  const output = run("sips", ["-g", "pixelWidth", "-g", "pixelHeight", imagePath]);
+  const widthMatch = output.match(/pixelWidth:\s*(\d+)/);
+  const heightMatch = output.match(/pixelHeight:\s*(\d+)/);
+  return {
+    width: widthMatch ? Number(widthMatch[1]) : 0,
+    height: heightMatch ? Number(heightMatch[1]) : 0,
+  };
+}
+
+function cropSpec(width, height) {
+  const raw = process.env.WEIBO_SUPERLIKE_ANDROID_CROP || DEFAULT_CROP;
+  if (!raw || /^(false|off|full)$/i.test(raw)) return null;
+  const parts = raw.split(",").map(part => Number(part.trim()));
+  if (parts.length !== 4 || parts.some(part => !Number.isFinite(part))) return null;
+  const [xRaw, yRaw, wRaw, hRaw] = parts;
+  const isRatio = parts.every(part => part >= 0 && part <= 1);
+  const x = Math.max(0, Math.round(isRatio ? xRaw * width : xRaw));
+  const y = Math.max(0, Math.round(isRatio ? yRaw * height : yRaw));
+  const cropWidth = Math.max(80, Math.min(width - x, Math.round(isRatio ? wRaw * width : wRaw)));
+  const cropHeight = Math.max(80, Math.min(height - y, Math.round(isRatio ? hRaw * height : hRaw)));
+  return { x, y, width: cropWidth, height: cropHeight };
+}
+
+function cropScreenshot(imagePath) {
+  if (!commandExists("sips")) return imagePath;
+  const size = imageSize(imagePath);
+  if (!size.width || !size.height) return imagePath;
+  const crop = cropSpec(size.width, size.height);
+  if (!crop) return imagePath;
+  run("sips", [
+    "-c", String(crop.height), String(crop.width),
+    "--cropOffset", String(crop.y), String(crop.x),
+    imagePath,
+    "--out", CROP_PATH,
+  ]);
+  return CROP_PATH;
 }
 
 function pageScheme(site) {
@@ -84,7 +143,7 @@ function captureScreenshot() {
   fs.mkdirSync(path.dirname(SCREENSHOT_PATH), { recursive: true });
   const png = adbBuffer(["exec-out", "screencap", "-p"]);
   fs.writeFileSync(SCREENSHOT_PATH, png);
-  return SCREENSHOT_PATH;
+  return cropScreenshot(SCREENSHOT_PATH);
 }
 
 function openPage(site) {
@@ -93,16 +152,44 @@ function openPage(site) {
   console.log(`Opened Weibo super topic: ${scheme}`);
 }
 
-function swipeTagStrip() {
-  const y = Number(process.env.WEIBO_SUPERLIKE_ANDROID_TAG_Y || DEFAULT_TAG_Y);
-  adb(["shell", "input", "swipe", "900", String(y), "180", String(y), "350"]);
+function focusedWindow() {
+  try {
+    const output = adb(["shell", "dumpsys", "window"]);
+    const current = output.match(/^\s*mCurrentFocus=.*$/m);
+    if (current) return current[0];
+    const display = output.match(/^\s*Display #\d+ currentFocus=.*$/m);
+    return display ? display[0] : "";
+  } catch (err) {
+    return "";
+  }
 }
 
-function runCollector(options) {
+async function ensurePage(site, forceOpen) {
+  const shouldEnsure = process.env.WEIBO_SUPERLIKE_ANDROID_ENSURE_PAGE !== "false";
+  if (!shouldEnsure && !forceOpen) return;
+  const focus = focusedWindow();
+  if (forceOpen || !/com\.sina\.weibo/.test(focus) || !/SGPageActivity/.test(focus)) {
+    openPage(site);
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 8000)));
+  }
+}
+
+function swipeTagStrip(attempt) {
+  const size = screenSize();
+  const y = Number(process.env.WEIBO_SUPERLIKE_ANDROID_TAG_Y || Math.round(size.height * DEFAULT_TAG_Y_RATIO) || DEFAULT_TAG_Y);
+  const left = Math.round(size.width * 0.15);
+  const right = Math.round(size.width * 0.86);
+  const swipeRight = attempt % 2 === 1;
+  const fromX = swipeRight ? left : right;
+  const toX = swipeRight ? right : left;
+  adb(["shell", "input", "swipe", String(fromX), String(y), String(toX), String(y), "450"]);
+}
+
+function runCollector(options, screenshotPath) {
   const args = [path.join(__dirname, "weibo-superlike-monitor.js"), "collect"];
   if (options.dryRun) args.push("--dry-run");
   const env = Object.assign({}, process.env, {
-    WEIBO_SUPERLIKE_SCREENSHOT_PATH: SCREENSHOT_PATH,
+    WEIBO_SUPERLIKE_SCREENSHOT_PATH: screenshotPath,
     WEIBO_SUPERLIKE_SKIP_BROWSER: "true",
   });
   return spawnSync(process.execPath, args, {
@@ -112,15 +199,16 @@ function runCollector(options) {
   }).status === 0;
 }
 
-function collectOnce(options) {
+async function collectOnce(site, options) {
+  await ensurePage(site, options.open);
   const attempts = Math.max(1, Number(process.env.WEIBO_SUPERLIKE_ANDROID_ATTEMPTS || 4));
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    captureScreenshot();
-    console.log(`[${new Date().toISOString()}] OCR attempt ${attempt}/${attempts}: ${path.relative(ROOT, SCREENSHOT_PATH)}`);
-    if (runCollector(options)) return true;
+    const screenshotPath = captureScreenshot();
+    console.log(`[${new Date().toISOString()}] OCR attempt ${attempt}/${attempts}: ${path.relative(ROOT, screenshotPath)}`);
+    if (runCollector(options, screenshotPath)) return true;
     if (attempt < attempts) {
       console.log("SuperLIKE tag was not readable. Swiping the banner tag strip and retrying...");
-      swipeTagStrip();
+      swipeTagStrip(attempt);
     }
   }
   return false;
@@ -129,14 +217,10 @@ function collectOnce(options) {
 async function watch(options) {
   const site = loadSiteConfig();
   const ms = refreshMs(site);
-  if (options.open) {
-    openPage(site);
-    await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 8000)));
-  }
   console.log(`Android OCR superLIKE monitor started: every ${Math.round(ms / 60000)} minutes`);
-  const loop = () => {
+  const loop = async () => {
     try {
-      const ok = collectOnce(options);
+      const ok = await collectOnce(site, options);
       if (!ok) console.error(`[${new Date().toISOString()}] OCR failed after all attempts.`);
     } catch (err) {
       console.error(`[${new Date().toISOString()}] ${err.message || err}`);
@@ -155,11 +239,7 @@ async function main() {
   const site = loadSiteConfig();
   if (mode === "open") return openPage(site);
   if (mode === "collect") {
-    if (options.open) {
-      openPage(site);
-      await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 8000)));
-    }
-    const ok = collectOnce(options);
+    const ok = await collectOnce(site, options);
     if (!ok) process.exitCode = 1;
     return;
   }

@@ -18,6 +18,8 @@
     "weibo:android:collect": "node scripts/weibo-android-monitor.js collect",
     "weibo:android:watch": "node scripts/weibo-android-monitor.js watch",
     "weibo:android:start": "node scripts/weibo-android-emulator.js start",
+    "weibo:android:optimize": "node scripts/weibo-android-emulator.js optimize",
+    "weibo:android:reset-display": "node scripts/weibo-android-emulator.js reset-display",
     "weibo:android:doctor": "node scripts/weibo-android-emulator.js doctor",
     "weibo:android:prepare": "node scripts/weibo-android-emulator.js prepare",
     "weibo:superlike:collect": "node scripts/weibo-superlike-monitor.js collect",

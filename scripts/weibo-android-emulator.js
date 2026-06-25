@@ -10,6 +10,8 @@ const AVD_NAME = process.env.WEIBO_ANDROID_AVD || "WeiboMonitor";
 const SDK_ROOT = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || "/opt/homebrew/share/android-commandlinetools";
 const ADB_SERIAL = process.env.ADB_SERIAL || "emulator-5554";
 const EMULATOR_LOG = path.join(DEBUG_DIR, "emulator.log");
+const DEFAULT_DISPLAY_SIZE = "720x1600";
+const DEFAULT_DISPLAY_DENSITY = "280";
 
 function commandPath(cmd) {
   const result = spawnSync("bash", ["-lc", `command -v ${cmd}`], { encoding: "utf8" });
@@ -40,6 +42,10 @@ function adb(args, options) {
 
 function adbSerial(args, options) {
   return adb(["-s", ADB_SERIAL].concat(args), options);
+}
+
+function adbEmu(serial, args) {
+  return run(ADB, ["-s", serial || ADB_SERIAL, "emu"].concat(args), { encoding: "utf8" });
 }
 
 function readyDevices() {
@@ -80,14 +86,20 @@ function startEmulator() {
     return false;
   }
   const out = fs.openSync(EMULATOR_LOG, "a");
-  const child = spawn(EMULATOR, [
+  const args = [
     "-avd", AVD_NAME,
     "-gpu", "host",
     "-netdelay", "none",
     "-netspeed", "full",
     "-dns-server", "223.5.5.5,119.29.29.29",
+    "-no-audio",
     "-no-boot-anim",
-  ], {
+    "-no-snapshot-save",
+    "-camera-back", "none",
+    "-camera-front", "none",
+  ];
+  if (process.env.WEIBO_ANDROID_HEADLESS === "true") args.push("-no-window");
+  const child = spawn(EMULATOR, args, {
     detached: true,
     stdio: ["ignore", out, out],
   });
@@ -108,6 +120,12 @@ function optimize(serial) {
     ["shell", "settings", "put", "system", "screen_off_timeout", "2147483647"],
     ["shell", "am", "force-stop", "com.android.vending"],
   ];
+  if (process.env.WEIBO_ANDROID_LOW_RES === "true") {
+    commands.unshift(
+      ["shell", "wm", "density", process.env.WEIBO_ANDROID_DENSITY || DEFAULT_DISPLAY_DENSITY],
+      ["shell", "wm", "size", process.env.WEIBO_ANDROID_SIZE || DEFAULT_DISPLAY_SIZE],
+    );
+  }
   commands.forEach(args => {
     try {
       run(ADB, ["-s", target].concat(args), { encoding: "utf8" });
@@ -115,7 +133,34 @@ function optimize(serial) {
       console.warn(`调优命令跳过：adb -s ${target} ${args.join(" ")}`);
     }
   });
+  [
+    ["network", "speed", "full"],
+    ["network", "delay", "none"],
+    ["gsm", "signal", "4"],
+    ["gsm", "data", "home"],
+  ].forEach(args => {
+    try {
+      adbEmu(target, args);
+    } catch (err) {
+      console.warn(`网络调优命令跳过：adb -s ${target} emu ${args.join(" ")}`);
+    }
+  });
   console.log(`已调优模拟器：${target}`);
+}
+
+function resetDisplay(serial) {
+  const target = serial || ADB_SERIAL;
+  [
+    ["shell", "wm", "size", "reset"],
+    ["shell", "wm", "density", "reset"],
+  ].forEach(args => {
+    try {
+      run(ADB, ["-s", target].concat(args), { encoding: "utf8" });
+    } catch (err) {
+      console.warn(`重置命令跳过：adb -s ${target} ${args.join(" ")}`);
+    }
+  });
+  console.log(`已重置模拟器显示：${target}`);
 }
 
 function doctor() {
@@ -124,6 +169,7 @@ function doctor() {
   console.log(`adb: ${ADB}`);
   console.log(`AVD: ${AVD_NAME}`);
   console.log(`ADB_SERIAL: ${ADB_SERIAL}`);
+  console.log(`Low-res display: ${process.env.WEIBO_ANDROID_LOW_RES === "true" ? `${process.env.WEIBO_ANDROID_SIZE || DEFAULT_DISPLAY_SIZE} @ ${process.env.WEIBO_ANDROID_DENSITY || DEFAULT_DISPLAY_DENSITY}dpi` : "off"}`);
   try {
     console.log("\nAVD 列表:");
     console.log(run(EMULATOR, ["-list-avds"]).trim() || "(empty)");
@@ -164,11 +210,15 @@ async function main() {
   const command = process.argv[2] || "doctor";
   if (command === "doctor") return doctor();
   if (command === "start") return start();
+  if (command === "optimize") return optimize(ADB_SERIAL);
+  if (command === "reset-display") return resetDisplay(ADB_SERIAL);
   if (command === "prepare") return prepare();
   console.log([
     "Usage:",
     "  npm run weibo:android:doctor   # 检查 SDK / AVD / adb / 微博安装",
     "  npm run weibo:android:start    # 启动并调优模拟器",
+    "  npm run weibo:android:optimize # 关闭动画、网络 full，适合长期 OCR 监控",
+    "  npm run weibo:android:reset-display # 恢复模拟器默认分辨率",
     "  npm run weibo:android:prepare  # 启动模拟器并打开微博活动页",
   ].join("\n"));
 }
