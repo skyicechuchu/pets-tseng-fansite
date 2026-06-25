@@ -105,6 +105,7 @@ function findNumber(patterns, text) {
 function extractSuperLikeCount(text) {
   return findNumber([
     /超\s*(?:LIKE|Like|like|ＬＩＫＥ|Like💫|LIKE💫)\s*[^\d]{0,12}([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*人/i,
+    /[A-Z]{1,4}\s*(?:LIKE|Like|like)\s*[^\d]{0,12}([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*人/i,
     /([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*人[^\n]{0,12}超\s*(?:LIKE|Like|like)/i,
   ], text);
 }
@@ -233,16 +234,20 @@ async function collectState(site, options) {
   const topicId = process.env.WEIBO_SUPERLIKE_TOPIC_ID || cfg.topicId || DEFAULT_TOPIC_ID;
   const tagId = process.env.WEIBO_SUPERLIKE_TAG_ID || cfg.tagId || DEFAULT_TAG_ID;
   const manualCount = parseMetricNumber(process.env.WEIBO_SUPERLIKE_COUNT || "");
+  const screenshotPath = process.env.WEIBO_SUPERLIKE_SCREENSHOT_PATH || "";
+  const useBrowserText = process.env.WEIBO_SUPERLIKE_BROWSER_TEXT === "true" || (!screenshotPath && process.env.WEIBO_SUPERLIKE_SKIP_BROWSER !== "true");
 
   let pageUrl = cfg.sourceUrl || `https://weibo.com/p/${pageId}`;
   let combined = "";
   let countInfo = { value: manualCount, text: manualCount ? superLikeLabel(manualCount) : "" };
   if (!manualCount) {
-    const collected = await collectBrowserText(Object.assign({}, cfg, { pageId }), options);
-    pageUrl = collected.pageUrl || pageUrl;
-    combined = collected.text || "";
-    if (process.env.WEIBO_SUPERLIKE_SCREENSHOT_PATH) {
-      combined += `\n\n${await ocrImage(process.env.WEIBO_SUPERLIKE_SCREENSHOT_PATH)}`;
+    if (useBrowserText) {
+      const collected = await collectBrowserText(Object.assign({}, cfg, { pageId }), options);
+      pageUrl = collected.pageUrl || pageUrl;
+      combined = collected.text || "";
+    }
+    if (screenshotPath) {
+      combined += `\n\n${await ocrImage(screenshotPath)}`;
     }
     countInfo = extractSuperLikeCount(combined);
   }
