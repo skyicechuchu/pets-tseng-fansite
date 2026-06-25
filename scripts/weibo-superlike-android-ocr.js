@@ -180,11 +180,11 @@ async function ensurePage(site, forceOpen) {
 function swipeTagStrip(attempt) {
   const size = screenSize();
   const y = Number(process.env.WEIBO_SUPERLIKE_ANDROID_TAG_Y || Math.round(size.height * DEFAULT_TAG_Y_RATIO) || DEFAULT_TAG_Y);
-  const left = Math.round(size.width * 0.15);
-  const right = Math.round(size.width * 0.86);
-  const swipeRight = attempt % 2 === 1;
-  const fromX = swipeRight ? left : right;
-  const toX = swipeRight ? right : left;
+  const left = Math.round(size.width * 0.28);
+  const right = Math.round(size.width * 0.74);
+  const revealRightSide = attempt <= 2 || attempt % 2 === 0;
+  const fromX = revealRightSide ? right : left;
+  const toX = revealRightSide ? left : right;
   adb(["shell", "input", "swipe", String(fromX), String(y), String(toX), String(y), "450"]);
 }
 
@@ -205,6 +205,10 @@ function runCollector(options, screenshotPath) {
 async function collectOnce(site, options) {
   await ensurePage(site, options.open);
   const attempts = Math.max(1, Number(process.env.WEIBO_SUPERLIKE_ANDROID_ATTEMPTS || 4));
+  if (process.env.WEIBO_SUPERLIKE_ANDROID_REVEAL_TAG !== "false") {
+    swipeTagStrip(0);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const screenshotPath = captureScreenshot();
     console.log(`[${new Date().toISOString()}] OCR attempt ${attempt}/${attempts}: ${path.relative(ROOT, screenshotPath)}`);
