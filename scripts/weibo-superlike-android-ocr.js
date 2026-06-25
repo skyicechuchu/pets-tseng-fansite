@@ -11,6 +11,7 @@ const SCREENSHOT_PATH = process.env.WEIBO_SUPERLIKE_ANDROID_SCREENSHOT_PATH || p
 const CROP_PATH = process.env.WEIBO_SUPERLIKE_ANDROID_CROP_PATH || path.join(DEBUG_DIR, "android-superlike-crop.png");
 const ADB_SERIAL = process.env.ADB_SERIAL || "emulator-5554";
 const DEFAULT_PAGE_ID = "1008081a9bfa740ec7181f9ce077ab08e96746";
+const DEFAULT_TAG_ID = "5294454512156724";
 const DEFAULT_REFRESH_MS = 30 * 60 * 1000;
 const DEFAULT_TAG_Y = 420;
 const DEFAULT_TAG_Y_RATIO = 0.175;
@@ -121,8 +122,9 @@ function cropScreenshot(imagePath) {
 function pageScheme(site) {
   const cfg = site.campaign && site.campaign.weiboSuperlike || {};
   const pageId = process.env.WEIBO_SUPERLIKE_PAGE_ID || cfg.pageId || DEFAULT_PAGE_ID;
+  const tagId = process.env.WEIBO_SUPERLIKE_TAG_ID || cfg.tagId || DEFAULT_TAG_ID;
   return process.env.WEIBO_SUPERLIKE_ANDROID_SCHEME ||
-    `sinaweibo://pageinfo?containerid=${pageId}`;
+    `sinaweibo://pageinfo?containerid=${pageId}__${tagId}_-_tag_comment_sort`;
 }
 
 function refreshMs(site) {
@@ -180,12 +182,11 @@ async function ensurePage(site, forceOpen) {
 function swipeTagStrip(attempt) {
   const size = screenSize();
   const y = Number(process.env.WEIBO_SUPERLIKE_ANDROID_TAG_Y || Math.round(size.height * DEFAULT_TAG_Y_RATIO) || DEFAULT_TAG_Y);
-  const left = Math.round(size.width * 0.28);
-  const right = Math.round(size.width * 0.74);
-  const revealRightSide = attempt <= 2 || attempt % 2 === 0;
-  const fromX = revealRightSide ? right : left;
-  const toX = revealRightSide ? left : right;
-  adb(["shell", "input", "swipe", String(fromX), String(y), String(toX), String(y), "450"]);
+  const fromX = Math.round(size.width * Number(process.env.WEIBO_SUPERLIKE_ANDROID_SWIPE_FROM_X_RATIO || 0.76));
+  const toX = Math.round(size.width * Number(process.env.WEIBO_SUPERLIKE_ANDROID_SWIPE_TO_X_RATIO || 0.60));
+  const duration = Math.round(Number(process.env.WEIBO_SUPERLIKE_ANDROID_SWIPE_MS || 180));
+  adb(["shell", "input", "swipe", String(fromX), String(y), String(toX), String(y), String(duration)]);
+  if (attempt) console.log(`Nudged SuperLIKE tag strip left (${attempt}).`);
 }
 
 function runCollector(options, screenshotPath) {
@@ -204,18 +205,15 @@ function runCollector(options, screenshotPath) {
 
 async function collectOnce(site, options) {
   await ensurePage(site, options.open);
-  const attempts = Math.max(1, Number(process.env.WEIBO_SUPERLIKE_ANDROID_ATTEMPTS || 4));
-  if (process.env.WEIBO_SUPERLIKE_ANDROID_REVEAL_TAG !== "false") {
-    swipeTagStrip(0);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
+  const attempts = Math.max(1, Number(process.env.WEIBO_SUPERLIKE_ANDROID_ATTEMPTS || 12));
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const screenshotPath = captureScreenshot();
     console.log(`[${new Date().toISOString()}] OCR attempt ${attempt}/${attempts}: ${path.relative(ROOT, screenshotPath)}`);
     if (runCollector(options, screenshotPath)) return true;
     if (attempt < attempts) {
-      console.log("SuperLIKE tag was not readable. Swiping the banner tag strip and retrying...");
+      console.log("SuperLIKE tag was not readable. Nudging the banner tag strip and retrying...");
       swipeTagStrip(attempt);
+      await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_AFTER_SWIPE_WAIT_MS || 700)));
     }
   }
   return false;
