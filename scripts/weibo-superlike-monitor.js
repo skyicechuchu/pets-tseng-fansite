@@ -101,7 +101,7 @@ function extractSuperLikeCount(text) {
     .replace(/[Ｋｋ]/g, "K")
     .replace(/[Ｅｅ]/g, "E")
     .replace(/[\u00a0\u2000-\u200b]/g, " ");
-  const minCount = Number(process.env.WEIBO_SUPERLIKE_MIN_COUNT || 1000);
+  const minCount = Number(process.env.WEIBO_SUPERLIKE_MIN_COUNT || 10000);
   const numberToken = "([\\d,]+(?:\\.\\d+)?\\s*(?:万|亿)?)";
   const patterns = [
     new RegExp(`(?:超\\s*)?(?:LIKE|L1KE|I[I1]KE|[A-Z]{1,4}\\s*LIKE)\\s*[:：]?\\s*${numberToken}(?:\\s*人)?`, "ig"),
@@ -132,7 +132,11 @@ function extractSuperLikeCount(text) {
   });
 
   const usable = candidates.filter(candidate => !Number.isFinite(minCount) || candidate.value >= minCount);
-  const pool = usable.length ? usable : candidates;
+  const requirePersonSuffix = process.env.WEIBO_SUPERLIKE_REQUIRE_PERSON_SUFFIX !== "false";
+  const complete = usable.filter(candidate => candidate.hasPersonSuffix || candidate.value >= minCount);
+  const pool = requirePersonSuffix
+    ? complete
+    : (usable.length ? usable : candidates);
   pool.sort((a, b) => (
     Number(b.hasPersonSuffix) - Number(a.hasPersonSuffix) ||
     Number(b.hasSuperPrefix) - Number(a.hasSuperPrefix) ||
