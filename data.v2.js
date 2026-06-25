@@ -139,8 +139,8 @@ const SITE = {
 
   // ---- 应援打投数据看板 ----
   campaign: {
-    title: "乘风2026 芒推推助力统计",
-    subtitle: "姐姐夯值投送、舞台助力值、上屏次数与本轮进度",
+    title: "乘风2026 数据统计",
+    subtitle: "B站舞台数据、作品播放与可视化监控",
     isDemo: false,
     mgtv: {
       appId: 1,
@@ -150,8 +150,8 @@ const SITE = {
       refreshMs: 60000,
       apiBase: "https://hb-mangott.api.mgtv.com",
       workerApiBase: "https://pets-vote-monitor.zhuqiaochu1987.workers.dev",
-      stageCollectionEnabled: true,
-      hotVoteCollectionEnabled: true,
+      stageCollectionEnabled: false,
+      hotVoteCollectionEnabled: false,
       sourceUrl: "https://app.mgtv.com/h/tuitui/detail3?isHideNavBar=1&isFullScreen=1&mode=sister&cid=859271&code=5b68c720",
       hotVoteSourceUrl: "https://lego.mgtv.com/tpl/event_voter/page/cf_zj_2026.html?source=share_cf_zj_2026_cz",
     },

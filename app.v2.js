@@ -509,6 +509,8 @@ function monitorDatasetConfig() {
 }
 function monitorDatasetEnabled(c, dataset) {
   if (!dataset) return false;
+  if (dataset.key === "hot") return Boolean(c && c.mgtv && c.mgtv.hotVoteCollectionEnabled === true);
+  if (dataset.key === "stage") return Boolean(c && c.mgtv && c.mgtv.stageCollectionEnabled === true);
   if (dataset.key === "weibo") return Boolean(c && c.weiboStage && c.weiboStage.collectionEnabled === true);
   if (dataset.key === "bilibili") return Boolean(c && c.bilibili && c.bilibili.collectionEnabled === true);
   return true;
@@ -563,12 +565,14 @@ function collectionSwitches(c) {
       key: "hot",
       label: "姐姐夯值统计",
       enabled: mgtv.hotVoteCollectionEnabled === true,
+      visible: mgtv.hotVoteCollectionEnabled === true,
       note: "Worker",
     },
     {
       key: "stage",
       label: "公演舞台统计",
       enabled: mgtv.stageCollectionEnabled === true,
+      visible: mgtv.stageCollectionEnabled === true,
       note: "Worker",
     },
     {
@@ -946,6 +950,13 @@ async function loadWorkerBilibiliDashboardData(campaign) {
   }
 }
 async function loadMgtvDashboardData(campaign) {
+  if (!campaign || !campaign.mgtv || campaign.mgtv.stageCollectionEnabled !== true) {
+    return hydrateMgtvState({
+      periods: [],
+      currentPeriodId: 0,
+      updatedAt: new Date().toISOString(),
+    }, "disabled");
+  }
   if (workerApiBase(campaign.mgtv)) {
     try {
       return await loadWorkerMgtvDashboardData(campaign);
@@ -956,6 +967,7 @@ async function loadMgtvDashboardData(campaign) {
   return loadLiveMgtvDashboardData(campaign);
 }
 async function loadHotVoteDashboardData(campaign) {
+  if (!campaign || !campaign.mgtv || campaign.mgtv.hotVoteCollectionEnabled !== true) return null;
   if (!workerApiBase(campaign.mgtv)) return null;
   try {
     return await loadWorkerHotVoteDashboardData(campaign);
@@ -1109,6 +1121,7 @@ function renderDashboardError(c, err) {
 }
 function renderHotVoteDashboardSection(c, hotState) {
   const mgtv = c.mgtv || {};
+  if (mgtv.hotVoteCollectionEnabled !== true) return "";
   const period = hotState && hotState.periods && hotState.periods[0];
   if (!period || !(period.rows || []).length) return "";
 
@@ -1391,24 +1404,23 @@ function renderBilibiliDashboardSection(c, biliState) {
 function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, weiboState, biliState) {
   const mgtv = c.mgtv;
   const periods = state.periods || [];
-  const selected = periods.find(p => Number(p.periodId) === Number(selectedPeriodId)) || periods[0];
-  if (!selected) {
-    renderDashboardError(c, new Error("没有找到舞台数据"));
-    return;
-  }
-  dashboardSelectedPeriodId = Number(selected.periodId);
+  const selected = mgtv.stageCollectionEnabled === true
+    ? periods.find(p => Number(p.periodId) === Number(selectedPeriodId)) || periods[0] || null
+    : null;
+  const showStage = Boolean(mgtv.stageCollectionEnabled === true && selected);
+  if (showStage) dashboardSelectedPeriodId = Number(selected.periodId);
 
-  const allRows = periods.flatMap(p => p.rows || []);
+  const allRows = showStage ? periods.flatMap(p => p.rows || []) : [];
   const targetRows = allRows.filter(row => row.isTarget);
-  const selectedTargetRows = (selected.rows || []).filter(row => row.isTarget);
-  const mainTarget = selectedTargetRows[0] || (selected.rows || [])[0] || {};
+  const selectedTargetRows = showStage ? (selected.rows || []).filter(row => row.isTarget) : [];
+  const mainTarget = showStage ? selectedTargetRows[0] || (selected.rows || [])[0] || {} : {};
   const targetTotal = sumRows(targetRows, "interactionValue");
   const screenTotal = sumRows(targetRows, "onScreenCount");
-  const target = Number(selected.targetValueInt || 0);
-  const progress = fmtPct(mainTarget.roundAmount, target);
+  const target = showStage ? Number(selected.targetValueInt || 0) : 0;
+  const progress = showStage ? fmtPct(mainTarget.roundAmount, target) : 0;
   const updatedText = formatBeijingClock(state.updatedAt);
-  const sourceBadge = state.source === "worker" ? "后台每分钟监控" : "MGTV 实时接口";
-  const sourceLink = mgtv.sourceUrl
+  const sourceBadge = state.source === "worker" ? "后台每分钟监控" : state.source === "disabled" ? "数据统计" : "MGTV 实时接口";
+  const sourceLink = showStage && mgtv.sourceUrl
     ? `<a href="${esc(mgtv.sourceUrl)}" target="_blank" rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors">芒推推页面 ${ICON.external}</a>`
     : "";
@@ -1420,7 +1432,7 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
   const weiboStageSection = renderWeiboStageDashboardSection(c, weiboState);
   const bilibiliSection = renderBilibiliDashboardSection(c, biliState);
 
-  const stats = [
+  const stats = showStage ? [
     { label: "沛慈相关累计助力", value: fmtInt(targetTotal), note: `${targetRows.length} 个舞台作品` },
     { label: "当前舞台排名", value: mainTarget.rank ? `#${mainTarget.rank}` : "--", note: mainTarget.title || "暂无数据" },
     { label: "本轮助力进度", value: `${progress}%`, note: `${fmtInt(mainTarget.roundAmount)} / ${fmtInt(target)}` },
@@ -1430,9 +1442,9 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
       <p class="text-sm text-gray-500">${esc(s.label)}</p>
       <p class="mt-1 font-display text-3xl text-brand-600">${esc(s.value)}</p>
       <p class="mt-1 truncate text-xs text-gray-500">${esc(s.note)}</p>
-    </div>`).join("");
+    </div>`).join("") : "";
 
-  const tabs = periods.map(p => {
+  const tabs = showStage ? periods.map(p => {
     const row = (p.rows || []).find(r => r.isTarget) || (p.rows || [])[0] || {};
     const active = Number(p.periodId) === Number(selected.periodId);
     return `
@@ -1444,9 +1456,9 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
           ${row.rank ? `#${row.rank} ${row.title}` : "暂无排名"}
         </span>
       </button>`;
-  }).join("");
+  }).join("") : "";
 
-  const progressBar = `
+  const progressBar = showStage ? `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
       <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <div>
@@ -1459,9 +1471,9 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
         <div class="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600" style="width:${progress}%"></div>
       </div>
       <p class="mt-2 text-xs text-gray-500">本轮 ${fmtInt(mainTarget.roundAmount)} / 目标 ${fmtInt(target)}，距下一次上屏 ${fmtInt(Math.max(target - Number(mainTarget.roundAmount || 0), 0))}</p>
-    </div>`;
+    </div>` : "";
 
-  const tableRows = (selected.rows || []).map(row => {
+  const tableRows = showStage ? (selected.rows || []).map(row => {
     const left = Math.max(target - row.roundAmount, 0);
     return `
       <tr class="${row.isTarget ? "bg-brand-50/80 text-brand-800" : ""}">
@@ -1473,29 +1485,10 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
         <td class="px-3 py-2 text-right">${fmtInt(row.onScreenCount)}</td>
         <td class="min-w-[16rem] px-3 py-2 text-gray-500">${esc(row.guest)}</td>
       </tr>`;
-  }).join("");
+  }).join("") : "";
 
-  const chartHeight = Math.max(260, (selected.rows || []).length * 34);
-  $("dashboard").innerHTML = `
-    <div class="bg-gradient-to-b from-white/60 to-brand-100/40">
-      <div class="max-w-6xl mx-auto px-5 py-20">
-        <div class="mb-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
-          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">${esc(sourceBadge)}</span>
-          <span>北京时间 ${esc(updatedText)}</span>
-          <span>每 ${Math.round((mgtv.refreshMs || 60000) / 1000)} 秒刷新</span>
-          ${staleText}
-        </div>
-        <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-2 text-center">${esc(c.title)}</h2>
-        <p class="text-center text-gray-500 mb-6">${esc(c.subtitle)}</p>
-        <div class="mb-8 flex flex-wrap items-center justify-center gap-4 text-sm">
-          ${sourceLink}
-        </div>
-        ${collectionStatus}
-
-        ${bilibiliSection}
-        ${hotVoteSection}
-        ${weiboStageSection}
-
+  const chartHeight = showStage ? Math.max(260, (selected.rows || []).length * 34) : 260;
+  const stageSection = showStage ? `
         <section>
           <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -1543,7 +1536,27 @@ function renderMgtvDashboard(c, state, selectedPeriodId, staleError, hotState, w
               </table>
             </div>
           </div>
-        </section>
+        </section>` : "";
+  $("dashboard").innerHTML = `
+    <div class="bg-gradient-to-b from-white/60 to-brand-100/40">
+      <div class="max-w-6xl mx-auto px-5 py-20">
+        <div class="mb-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
+          <span class="rounded-full bg-white px-3 py-1 font-medium text-brand-600 shadow-sm">${esc(sourceBadge)}</span>
+          <span>北京时间 ${esc(updatedText)}</span>
+          <span>每 ${Math.round((mgtv.refreshMs || 60000) / 1000)} 秒刷新</span>
+          ${staleText}
+        </div>
+        <h2 class="font-display text-3xl sm:text-4xl text-brand-600 mb-2 text-center">${esc(c.title)}</h2>
+        <p class="text-center text-gray-500 mb-6">${esc(c.subtitle)}</p>
+        <div class="mb-8 flex flex-wrap items-center justify-center gap-4 text-sm">
+          ${sourceLink}
+        </div>
+        ${collectionStatus}
+
+        ${bilibiliSection}
+        ${hotVoteSection}
+        ${weiboStageSection}
+        ${stageSection}
       </div>
     </div>`;
 
@@ -1695,45 +1708,51 @@ function drawMgtvCharts(c, state, selected, hotState, weiboState, biliState) {
     });
   }
 
-  const rows = selected.rows || [];
-  dashboardRankChart = new Chart($("rankChart"), {
-    type: "bar",
-    data: {
-      labels: rows.map(row => row.title),
-      datasets: [{
-        data: rows.map(row => row.interactionValue),
-        backgroundColor: rows.map(row => row.isTarget ? "#dc2626" : "#fecaca"),
-        borderRadius: 6,
-      }],
-    },
-    options: Object.assign({}, baseOpts, {
-      indexAxis: "y",
-      scales: {
-        x: { beginAtZero: true, grid: { color: "#fde8e8" }, ticks: { callback: value => fmtInt(value) } },
-        y: { grid: { display: false } },
+  const rankCanvas = $("rankChart");
+  const rows = selected && selected.rows || [];
+  if (rankCanvas && rows.length) {
+    dashboardRankChart = new Chart(rankCanvas, {
+      type: "bar",
+      data: {
+        labels: rows.map(row => row.title),
+        datasets: [{
+          data: rows.map(row => row.interactionValue),
+          backgroundColor: rows.map(row => row.isTarget ? "#dc2626" : "#fecaca"),
+          borderRadius: 6,
+        }],
       },
-    }),
-  });
+      options: Object.assign({}, baseOpts, {
+        indexAxis: "y",
+        scales: {
+          x: { beginAtZero: true, grid: { color: "#fde8e8" }, ticks: { callback: value => fmtInt(value) } },
+          y: { grid: { display: false } },
+        },
+      }),
+    });
+  }
 
   const stageValues = (state.periods || []).map(period =>
     sumRows((period.rows || []).filter(row => row.isTarget), "interactionValue"));
-  dashboardStageChart = new Chart($("stageChart"), {
-    type: "bar",
-    data: {
-      labels: (state.periods || []).map(period => period.periodLabel),
-      datasets: [{
-        data: stageValues,
-        backgroundColor: "#dc2626",
-        borderRadius: 8,
-      }],
-    },
-    options: Object.assign({}, baseOpts, {
-      scales: {
-        y: { beginAtZero: true, grid: { color: "#fde8e8" }, ticks: { callback: value => fmtInt(value) } },
-        x: { grid: { display: false } },
+  const stageCanvas = $("stageChart");
+  if (stageCanvas && stageValues.length) {
+    dashboardStageChart = new Chart(stageCanvas, {
+      type: "bar",
+      data: {
+        labels: (state.periods || []).map(period => period.periodLabel),
+        datasets: [{
+          data: stageValues,
+          backgroundColor: "#dc2626",
+          borderRadius: 8,
+        }],
       },
-    }),
-  });
+      options: Object.assign({}, baseOpts, {
+        scales: {
+          y: { beginAtZero: true, grid: { color: "#fde8e8" }, ticks: { callback: value => fmtInt(value) } },
+          x: { grid: { display: false } },
+        },
+      }),
+    });
+  }
 }
 function scheduleMgtvRefresh(c) {
   clearInterval(dashboardRefreshTimer);
