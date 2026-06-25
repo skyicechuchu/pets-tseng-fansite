@@ -94,20 +94,52 @@ async function ocrImage(imagePath) {
   return text;
 }
 
-function findNumber(patterns, text) {
-  for (const pattern of patterns) {
-    const match = String(text || "").match(pattern);
-    if (match) return { value: parseMetricNumber(match[1]), text: match[0] };
-  }
-  return { value: 0, text: "" };
-}
-
 function extractSuperLikeCount(text) {
-  return findNumber([
-    /超\s*(?:LIKE|Like|like|ＬＩＫＥ|Like💫|LIKE💫)\s*[^\d]{0,12}([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*人/i,
-    /[A-Z]{1,4}\s*(?:LIKE|Like|like)\s*[^\d]{0,12}([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*人/i,
-    /([\d,.]+(?:\.\d+)?\s*(?:万|亿)?)\s*人[^\n]{0,12}超\s*(?:LIKE|Like|like)/i,
-  ], text);
+  const normalized = String(text || "")
+    .replace(/[Ｌｌ]/g, "L")
+    .replace(/[Ｉｉ]/g, "I")
+    .replace(/[Ｋｋ]/g, "K")
+    .replace(/[Ｅｅ]/g, "E")
+    .replace(/[\u00a0\u2000-\u200b]/g, " ");
+  const minCount = Number(process.env.WEIBO_SUPERLIKE_MIN_COUNT || 1000);
+  const numberToken = "([\\d,]+(?:\\.\\d+)?\\s*(?:万|亿)?)";
+  const patterns = [
+    new RegExp(`(?:超\\s*)?(?:LIKE|L1KE|I[I1]KE|[A-Z]{1,4}\\s*LIKE)\\s*[:：]?\\s*${numberToken}(?:\\s*人)?`, "ig"),
+    new RegExp(`${numberToken}\\s*(?:人)?\\s*(?:超\\s*)?(?:LIKE|L1KE|I[I1]KE)`, "ig"),
+  ];
+  const candidates = [];
+
+  normalized.split(/\r?\n/).forEach(line => {
+    const compactLine = line.replace(/\s+/g, " ").trim();
+    if (!/LIKE|L1KE|I[I1]KE/i.test(compactLine)) return;
+    patterns.forEach(pattern => {
+      pattern.lastIndex = 0;
+      let match = pattern.exec(compactLine);
+      while (match) {
+        const value = parseMetricNumber(match[1]);
+        if (value) {
+          candidates.push({
+            value,
+            text: match[0],
+            hasPersonSuffix: /人/.test(match[0]),
+            hasSuperPrefix: /超/.test(match[0]),
+            index: match.index,
+          });
+        }
+        match = pattern.exec(compactLine);
+      }
+    });
+  });
+
+  const usable = candidates.filter(candidate => !Number.isFinite(minCount) || candidate.value >= minCount);
+  const pool = usable.length ? usable : candidates;
+  pool.sort((a, b) => (
+    Number(b.hasPersonSuffix) - Number(a.hasPersonSuffix) ||
+    Number(b.hasSuperPrefix) - Number(a.hasSuperPrefix) ||
+    b.value - a.value ||
+    a.index - b.index
+  ));
+  return pool[0] ? { value: pool[0].value, text: pool[0].text } : { value: 0, text: "" };
 }
 
 function superLikeLabel(value) {
