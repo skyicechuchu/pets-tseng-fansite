@@ -234,6 +234,10 @@ function isGenericSuperGroupPage(text) {
   return /Super Group/i.test(normalized) && !/曾沛慈|超\s*(?:LIKE|Like)|Posts/.test(normalized);
 }
 
+function isSuperLikeWrongPage(text) {
+  return /钻超等级详情|钻超成长体系|本周等级/.test(String(text || ""));
+}
+
 function swipeTagStrip(attempt) {
   const size = screenSize();
   const y = Number(process.env.WEIBO_SUPERLIKE_ANDROID_TAG_Y || Math.round(size.height * DEFAULT_TAG_Y_RATIO) || DEFAULT_TAG_Y);
@@ -278,6 +282,13 @@ async function collectOnce(site, options) {
     console.log(`[${new Date().toISOString()}] OCR attempt ${attempt}/${attempts}: ${path.relative(ROOT, screenshotPath)}`);
     if (runCollector(options, screenshotPath)) return true;
     const text = lastOcrText();
+    if (isSuperLikeWrongPage(text)) {
+      console.log("Opened SuperLIKE detail page instead of topic header. Reopening super topic...");
+      openPage(site, schemes[schemeIndex]);
+      await wait(Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 30000));
+      if (dismissPermissionDialog()) await wait(1000);
+      continue;
+    }
     if (schemes.length > 1 && isGenericSuperGroupPage(text)) {
       schemeIndex = (schemeIndex + 1) % schemes.length;
       console.log("Opened generic Super Group page. Reopening with fallback scheme...");
