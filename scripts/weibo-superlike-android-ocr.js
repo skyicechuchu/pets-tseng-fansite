@@ -148,7 +148,10 @@ function captureScreenshot() {
 
 function openPage(site) {
   const scheme = pageScheme(site);
-  adb(["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", scheme, "com.sina.weibo"]);
+  if (process.env.WEIBO_SUPERLIKE_ANDROID_FORCE_STOP === "true") {
+    adb(["shell", "am", "force-stop", "com.sina.weibo"]);
+  }
+  adb(["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", scheme, "com.sina.weibo"]);
   console.log(`Opened Weibo super topic: ${scheme}`);
 }
 
@@ -170,7 +173,7 @@ async function ensurePage(site, forceOpen) {
   const focus = focusedWindow();
   if (forceOpen || !/com\.sina\.weibo/.test(focus) || !/SGPageActivity/.test(focus)) {
     openPage(site);
-    await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 8000)));
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 15000)));
   }
 }
 

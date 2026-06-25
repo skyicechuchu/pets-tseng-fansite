@@ -149,7 +149,7 @@ function screenSize() {
 }
 
 function openActivity() {
-  adb(["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", SOURCE_URL]);
+  adb(["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", SOURCE_URL, "com.sina.weibo"]);
   console.log(`已请求 Android 打开微博姐姐热度页：${SOURCE_URL}`);
 }
 
