@@ -168,7 +168,7 @@ const SITE = {
       pageId: "1008081a9bfa740ec7181f9ce077ab08e96746",
       topicId: "1022:1008081a9bfa740ec7181f9ce077ab08e96746",
       tagId: "5294454512156724",
-      refreshMs: 1800000,
+      refreshMs: 300000,
       historyUrl: "data/weibo-superlike-history.json",
     },
     bilibili: {

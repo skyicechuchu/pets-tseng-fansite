@@ -603,7 +603,7 @@ function collectionSwitches(c) {
       label: "微博超LIKE人数",
       enabled: weiboSuperlike.collectionEnabled === true,
       visible: weiboSuperlike.collectionEnabled === true,
-      note: "30 分钟",
+      note: `每 ${Math.max(1, Math.round(Number(weiboSuperlike.refreshMs || 300000) / 60000))} 分钟`,
     },
     {
       key: "bilibili",
@@ -1335,6 +1335,7 @@ function renderWeiboStageDashboardSection(c, weiboState) {
 }
 function renderWeiboSuperlikeDashboardSection(c, superState) {
   const cfg = c.weiboSuperlike || {};
+  const refreshMinutes = Math.max(1, Math.round(Number(cfg.refreshMs || 300000) / 60000));
   const period = superState && superState.periods && superState.periods[0];
   const row = period && period.rows && period.rows[0];
   if (!row) return "";
@@ -1347,7 +1348,7 @@ function renderWeiboSuperlikeDashboardSection(c, superState) {
     { label: "超LIKE人数", value: fmtInt(row.interactionValue), note: row.labelText || "顶部 tag 人数" },
     { label: "今日签到", value: row.roundAmount ? `${fmtInt(row.roundAmount)} 人` : "--", note: "微博超话公开头部数据" },
     { label: "超话粉丝", value: row.onScreenCount ? fmtCompact(row.onScreenCount) : "--", note: cfg.targetName || row.guest || "曾沛慈" },
-    { label: "采样频率", value: "30 分钟", note: `最近 ${updated}` },
+    { label: "采样频率", value: `${refreshMinutes} 分钟`, note: `最近 ${updated}` },
   ].map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
       <p class="text-sm text-gray-500">${esc(item.label)}</p>
