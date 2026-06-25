@@ -1982,15 +1982,13 @@ async function loadMonitorHistoryForDisplay(c) {
         monitorRetryTimer = null;
         return sanitizeMonitorHistory(snapshots);
       }
-      if (!dataset.localConfigKey) {
-        const latest = await fetchMonitorLatestSnapshot(dataset, c);
-        if (latest) {
-          monitorHistorySource = "worker-latest";
-          monitorHistoryStatus = { ok: true, source: "worker-latest", count: 1, error: "" };
-          return sanitizeMonitorHistory([latest]);
-        }
-        return [];
+      const latest = await fetchMonitorLatestSnapshot(dataset, c);
+      if (latest) {
+        monitorHistorySource = "worker-latest";
+        monitorHistoryStatus = { ok: true, source: "worker-latest", count: 1, error: "" };
+        return sanitizeMonitorHistory([latest]);
       }
+      if (!dataset.localConfigKey) return [];
     } catch (e) {
       console.warn("Worker 历史暂时不可用，改用浏览器本地历史", e);
       monitorHistoryStatus = {
