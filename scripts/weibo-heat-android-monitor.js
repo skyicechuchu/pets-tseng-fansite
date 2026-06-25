@@ -14,13 +14,13 @@ const SOURCE_URL = process.env.WEIBO_HEAT_URL || `sinaweibo://browser?url=${enco
 const TARGET_NAME = process.env.WEIBO_HEAT_TARGET_NAME || "曾沛慈";
 const PERIOD_ID = Number(process.env.WEIBO_HEAT_PERIOD_ID || 2026062603);
 const PERIOD_LABEL = process.env.WEIBO_HEAT_PERIOD_LABEL || "微博姐姐热度";
-const INTERVAL_MS = Number(process.env.WEIBO_HEAT_INTERVAL_MS || 300000);
+const INTERVAL_MS = Number(process.env.WEIBO_HEAT_INTERVAL_MS || 1800000);
 const MAX_SNAPSHOTS = Number(process.env.WEIBO_HEAT_MAX_SNAPSHOTS || 30 * 24 * 12);
 const TOP_N = Math.max(1, Number(process.env.WEIBO_HEAT_TOP_N || 10));
 const SCROLL_PAGES = Math.max(2, Number(process.env.WEIBO_HEAT_SCROLL_PAGES || 3));
-const OPEN_WAIT_MS = Number(process.env.WEIBO_HEAT_OPEN_WAIT_MS || 22000);
-const TAB_WAIT_MS = Number(process.env.WEIBO_HEAT_TAB_WAIT_MS || 14000);
-const SCROLL_SETTLE_MS = Number(process.env.WEIBO_HEAT_SCROLL_SETTLE_MS || 1600);
+const OPEN_WAIT_MS = Number(process.env.WEIBO_HEAT_OPEN_WAIT_MS || 45000);
+const TAB_WAIT_MS = Number(process.env.WEIBO_HEAT_TAB_WAIT_MS || 25000);
+const SCROLL_SETTLE_MS = Number(process.env.WEIBO_HEAT_SCROLL_SETTLE_MS || 2500);
 const ADB_SERIAL = process.env.ADB_SERIAL || "emulator-5554";
 const DEFAULT_NAMES = "曾沛慈,李小冉,张月,王濛,乌兰图雅,徐梦洁,陈瑶,安崎,萧蔷,范玮琪";
 const HEAT_NAMES = (process.env.WEIBO_HEAT_NAMES || DEFAULT_NAMES)

@@ -165,7 +165,7 @@ const SITE = {
       targetName: "曾沛慈",
       collectionEnabled: true,
       sourceUrl: "https://wbox.h5.weibo.cn/l331zrkexk?cid=1336&id=l331zrkexk&luicode=40000385&source=wbox&s_trans=p4ApnESHund8QXkwIKw0Rw%3D%3D__s&s_channel=4",
-      refreshMs: 300000,
+      refreshMs: 1800000,
       historyUrl: "data/weibo-heat-history.json",
       topN: 10,
     },
@@ -176,7 +176,7 @@ const SITE = {
       pageId: "1008081a9bfa740ec7181f9ce077ab08e96746",
       topicId: "1022:1008081a9bfa740ec7181f9ce077ab08e96746",
       tagId: "5294454512156724",
-      refreshMs: 300000,
+      refreshMs: 1800000,
       historyUrl: "data/weibo-superlike-history.json",
     },
     bilibili: {

@@ -9,8 +9,8 @@ const ROOT = path.resolve(__dirname, "..");
 const DATA_FILE = path.join(ROOT, "data.v2.js");
 const LOCK_PATH = process.env.WEIBO_ANDROID_SCHEDULER_LOCK || path.join(ROOT, "tmp/weibo-android-scheduler.lock");
 const ADB_SERIAL = process.env.ADB_SERIAL || "emulator-5554";
-const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
-const DEFAULT_COOLDOWN_MS = 8000;
+const DEFAULT_INTERVAL_MS = 30 * 60 * 1000;
+const DEFAULT_COOLDOWN_MS = 30000;
 
 function loadEnvFile(file) {
   if (!fs.existsSync(file)) return;

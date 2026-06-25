@@ -11,7 +11,7 @@ const SCREENSHOT_PATH = process.env.WEIBO_SUPERLIKE_ANDROID_SCREENSHOT_PATH || p
 const CROP_PATH = process.env.WEIBO_SUPERLIKE_ANDROID_CROP_PATH || path.join(DEBUG_DIR, "android-superlike-crop.png");
 const ADB_SERIAL = process.env.ADB_SERIAL || "emulator-5554";
 const DEFAULT_PAGE_ID = "1008081a9bfa740ec7181f9ce077ab08e96746";
-const DEFAULT_REFRESH_MS = 5 * 60 * 1000;
+const DEFAULT_REFRESH_MS = 30 * 60 * 1000;
 const DEFAULT_TAG_Y = 420;
 const DEFAULT_TAG_Y_RATIO = 0.175;
 const DEFAULT_CROP = "0.04,0.045,0.92,0.22";
@@ -173,7 +173,7 @@ async function ensurePage(site, forceOpen) {
   const focus = focusedWindow();
   if (forceOpen || !/com\.sina\.weibo/.test(focus) || !/SGPageActivity/.test(focus)) {
     openPage(site);
-    await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 15000)));
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.WEIBO_SUPERLIKE_ANDROID_OPEN_WAIT_MS || 30000)));
   }
 }
 

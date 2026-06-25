@@ -15,7 +15,7 @@ const PERIOD_LABEL = "曾沛慈超话";
 const DEFAULT_PAGE_ID = "1008081a9bfa740ec7181f9ce077ab08e96746";
 const DEFAULT_TOPIC_ID = `1022:${DEFAULT_PAGE_ID}`;
 const DEFAULT_TAG_ID = "5294454512156724";
-const DEFAULT_REFRESH_MS = 5 * 60 * 1000;
+const DEFAULT_REFRESH_MS = 30 * 60 * 1000;
 const MAX_SNAPSHOTS = 30 * 24 * 12;
 
 function loadEnvFile(file) {
