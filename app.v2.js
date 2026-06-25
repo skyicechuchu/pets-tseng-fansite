@@ -488,6 +488,7 @@ const MONITOR_DATASETS = {
     historyPath: "/weibo-superlike/history",
     latestPath: "/weibo-superlike/latest",
     sourceConfigKey: "weiboSuperlike",
+    valueMode: "absolute",
     valueLabel: "指标",
     yAxisLabel: "超LIKE人数",
     sourceLabel: "曾沛慈超话",
@@ -683,6 +684,9 @@ function monitorAxisTick(dataset, value) {
     return `${Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}万`;
   }
   return fmtInt(value);
+}
+function monitorUsesAbsoluteValues(dataset) {
+  return dataset && dataset.valueMode === "absolute";
 }
 function fmtPct(value, total) {
   if (!total) return 0;
@@ -2569,6 +2573,49 @@ function monitorWindowSummary(metrics, buckets) {
     activeCount: totals.filter(item => item.value > 0).length,
   };
 }
+function monitorAbsolutePoints(history, periodId, rows, windowInfo) {
+  const keys = new Set((rows || []).map(row => row.key));
+  return (history || [])
+    .filter(snapshot => snapshot.ts >= windowInfo.startTs && snapshot.ts <= windowInfo.endTs)
+    .map(snapshot => {
+      const rowsByKey = rowMap(snapshot, periodId);
+      const values = new Map();
+      keys.forEach(key => {
+        const row = rowsByKey.get(key);
+        if (row) values.set(key, Number(row.interactionValue || 0));
+      });
+      return { ts: snapshot.ts, values };
+    })
+    .filter(point => point.values.size);
+}
+function monitorAbsoluteSummary(rows, points) {
+  const rowStats = (rows || []).map(row => {
+    const values = (points || [])
+      .map(point => point.values.get(row.key))
+      .filter(value => Number.isFinite(value));
+    const current = values.length ? values[values.length - 1] : 0;
+    return {
+      row,
+      current,
+      min: values.length ? Math.min(...values) : 0,
+      max: values.length ? Math.max(...values) : 0,
+      count: values.length,
+    };
+  });
+  const totals = rowStats.reduce((acc, item) => {
+    acc.current += item.current;
+    acc.min += item.min;
+    acc.max += item.max;
+    return acc;
+  }, { current: 0, min: 0, max: 0 });
+  return {
+    current: totals.current,
+    min: totals.min,
+    max: totals.max,
+    activeCount: rowStats.filter(item => item.count > 0).length,
+    top: rowStats.slice().sort((a, b) => b.current - a.current)[0],
+  };
+}
 function latestPeriodId(history) {
   const latest = history[history.length - 1];
   if (monitorDataKind !== "stage") {
@@ -2767,6 +2814,7 @@ async function renderMonitor(options) {
   const intervals = monitorIntervals(history, selected.periodId);
   const windowInfo = resolveMonitorWindow(periodHistory);
   const buckets = aggregateMonitorBuckets(intervals, metrics, windowInfo);
+  const absoluteMode = monitorUsesAbsoluteValues(dataset);
   const selectionContext = monitorSelectionContext(dataset.key, selected.periodId);
   const selectableRows = dataset.key === "hot" || dataset.key === "weibo" || dataset.key === "weiboHeat" || dataset.key === "bilibili";
   const selectedKeys = selectableRows
@@ -2775,7 +2823,10 @@ async function renderMonitor(options) {
   const visibleRows = selectableRows
     ? monitorRowsForSelection(metrics, selectedKeys)
     : monitorRowsForWindow(metrics, buckets);
-  const summary = monitorWindowSummary(visibleRows, buckets);
+  const absolutePoints = absoluteMode ? monitorAbsolutePoints(periodHistory, selected.periodId, visibleRows, windowInfo) : [];
+  const summary = absoluteMode
+    ? monitorAbsoluteSummary(visibleRows, absolutePoints)
+    : monitorWindowSummary(visibleRows, buckets);
   const latest = periodHistory[periodHistory.length - 1];
   const first = periodHistory[0];
   const updated = latest ? formatBeijingClock(latest.ts) : "--";
@@ -2826,12 +2877,20 @@ async function renderMonitor(options) {
       </div>
     </div>`;
 
-  const stats = [
-    { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
-    { label: "当前时间窗", value: formatMonitorDuration(windowInfo.spanMs), note: formatMonitorRange(windowInfo.startTs, windowInfo.endTs) },
-    { label: "窗口新增", value: monitorDisplayValue(dataset, summary.total), note: summary.top && summary.top.value ? `最高：${summary.top.row.title}` : "暂无新增" },
-    { label: "合并粒度", value: formatMonitorDuration(windowInfo.bucketMs), note: `${buckets.length} 个时间点 · ${summary.activeCount} 个${dataset.valueLabel}有新增` },
-  ].map(item => `
+  const statsConfig = absoluteMode
+    ? [
+      { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
+      { label: "当前时间窗", value: formatMonitorDuration(windowInfo.spanMs), note: formatMonitorRange(windowInfo.startTs, windowInfo.endTs) },
+      { label: "当前值", value: monitorDisplayValue(dataset, summary.current), note: summary.top && summary.top.count ? `${summary.top.row.title} 最新` : "暂无记录" },
+      { label: "图表点数", value: `${absolutePoints.length}`, note: `${summary.activeCount} 个${dataset.valueLabel}有记录` },
+    ]
+    : [
+      { label: "采样快照", value: `${periodHistory.length}`, note: `最近 ${updated}` },
+      { label: "当前时间窗", value: formatMonitorDuration(windowInfo.spanMs), note: formatMonitorRange(windowInfo.startTs, windowInfo.endTs) },
+      { label: "窗口新增", value: monitorDisplayValue(dataset, summary.total), note: summary.top && summary.top.value ? `最高：${summary.top.row.title}` : "暂无新增" },
+      { label: "合并粒度", value: formatMonitorDuration(windowInfo.bucketMs), note: `${buckets.length} 个时间点 · ${summary.activeCount} 个${dataset.valueLabel}有新增` },
+    ];
+  const stats = statsConfig.map(item => `
     <div class="rounded-xl border border-brand-100 bg-white p-5 shadow-sm">
       <p class="text-sm text-gray-500">${esc(item.label)}</p>
       <p class="mt-1 font-display text-3xl text-brand-600">${esc(item.value)}</p>
@@ -2840,7 +2899,13 @@ async function renderMonitor(options) {
   const nameSelector = selectableRows
     ? renderMonitorNameSelector(metrics, selectedKeys, selectionContext)
     : "";
-  const dataPointNotice = !buckets.length
+  const dataPointNotice = absoluteMode
+    ? !absolutePoints.length
+      ? `<div class="mt-4 rounded-xl border border-yellow-100 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          当前时间窗内还没有${dataset.emptyName}采样点。可以扩大时间范围，或等待下一轮有效采样。
+        </div>`
+      : ""
+    : !buckets.length
     ? `<div class="mt-4 rounded-xl border border-yellow-100 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
         当前时间窗内还没有可计算的增量点。${periodHistory.length < 2
           ? `至少需要同一个${dataset.valueLabel}两次有效采样，下一轮采样后会自动出现走势。`
@@ -2890,7 +2955,7 @@ async function renderMonitor(options) {
     </div>`;
 
   attachMonitorHandlers(c, periodHistory);
-  drawMonitorCharts(history, selected.periodId, metrics, windowInfo, buckets, visibleRows);
+  drawMonitorCharts(history, selected.periodId, metrics, windowInfo, buckets, visibleRows, absolutePoints);
   scheduleMonitorRefresh(c, dataset);
   alignMonitorHash();
 }
@@ -2986,13 +3051,15 @@ function attachMonitorHandlers(c, history) {
     });
   });
 }
-function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visibleRows) {
+function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visibleRows, absolutePoints) {
   if (monitorRateChart) monitorRateChart.destroy();
   if (!window.Chart) return;
   const dataset = monitorDatasetConfig();
+  const absoluteMode = monitorUsesAbsoluteValues(dataset);
+  const points = absoluteMode ? (absolutePoints || []) : buckets;
 
-  const labels = buckets.length
-    ? buckets.map(bucket => bucketLabel(bucket.ts, windowInfo.spanMs))
+  const labels = points.length
+    ? points.map(point => bucketLabel(point.ts, windowInfo.spanMs))
     : ["暂无数据"];
   const top = Array.isArray(visibleRows)
     ? visibleRows
@@ -3012,11 +3079,17 @@ function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visi
         const color = monitorSeriesColor(row, index);
         return {
           label: row.title,
-          data: buckets.length ? buckets.map(bucket => monitorChartValue(dataset, bucket.deltas.get(row.key) || 0)) : [0],
+          data: absoluteMode
+            ? (points.length ? points.map(point => {
+              const value = point.values.get(row.key);
+              return value == null ? null : monitorChartValue(dataset, value);
+            }) : [null])
+            : (points.length ? points.map(bucket => monitorChartValue(dataset, bucket.deltas.get(row.key) || 0)) : [0]),
           borderColor: color,
           backgroundColor: hexToRgba(color, 0.08),
           tension: 0.25,
-          pointRadius: 2,
+          pointRadius: absoluteMode ? 3 : 2,
+          spanGaps: true,
         };
       }),
     },
@@ -3031,7 +3104,7 @@ function drawMonitorCharts(history, periodId, metrics, windowInfo, buckets, visi
         },
         x: {
           grid: { display: false },
-          title: { display: true, text: `采样时间（${formatMonitorDuration(windowInfo.bucketMs)}合并）` },
+          title: { display: true, text: absoluteMode ? "采样时间" : `采样时间（${formatMonitorDuration(windowInfo.bucketMs)}合并）` },
         },
       },
     }),
